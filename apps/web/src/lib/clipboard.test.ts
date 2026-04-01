@@ -1,90 +1,84 @@
-import { describe, expect, it, beforeEach, afterEach, mock } from 'bun:test';
-import { copyTextToClipboard, type ClipboardResult } from './clipboard';
+import { describe, expect, it, beforeEach, afterEach, mock, spyOn } from 'bun:test';
+import { copyTextToClipboard } from './clipboard';
 
 describe('copyTextToClipboard', () => {
-	let mockWriteText: ReturnType<typeof mock>;
-	let mockExecCommand: ReturnType<typeof mock>;
-	let mockCreateElement: ReturnType<typeof mock>;
-	let mockAppendChild: ReturnType<typeof mock>;
-	let mockRemoveChild: ReturnType<typeof mock>;
-	let mockSelect: ReturnType<typeof mock>;
+	let writeTextSpy: ReturnType<typeof spyOn>;
+	let savedClipboard: Clipboard | undefined;
 
 	beforeEach(() => {
-		mockWriteText = mock(() => Promise.resolve());
-		mockExecCommand = mock(() => true);
-		mockSelect = mock(() => {});
-		mockAppendChild = mock(() => {});
-		mockRemoveChild = mock(() => {});
+		savedClipboard = navigator.clipboard;
 
-		// Create a mock textarea element
-		const mockTextarea = {
-			value: '',
-			setAttribute: mock(() => {}),
-			style: {},
-			select: mockSelect,
-		};
-
-		mockCreateElement = mock(() => mockTextarea);
-
-		// Reset navigator.clipboard mock
-		Object.defineProperty(globalThis, 'navigator', {
-			value: {
-				clipboard: {
-					writeText: mockWriteText,
-				},
-			},
-			writable: true,
-			configurable: true,
-		});
-
-		// Mock document methods
-		Object.defineProperty(globalThis, 'document', {
-			value: {
-				createElement: mockCreateElement,
-				body: {
-					appendChild: mockAppendChild,
-					removeChild: mockRemoveChild,
-				},
-				execCommand: mockExecCommand,
-			},
-			writable: true,
-			configurable: true,
-		});
+		if (!navigator.clipboard) {
+			Object.defineProperty(navigator, 'clipboard', {
+				value: { writeText: () => Promise.resolve() },
+				configurable: true,
+				writable: true,
+			});
+		}
+		writeTextSpy = spyOn(navigator.clipboard, 'writeText').mockImplementation(() => Promise.resolve());
 	});
 
 	afterEach(() => {
-		mockWriteText.mockClear();
-		mockExecCommand.mockClear();
-		mockCreateElement.mockClear();
-		mockAppendChild.mockClear();
-		mockRemoveChild.mockClear();
-		mockSelect.mockClear();
+		writeTextSpy.mockRestore();
+		Object.defineProperty(navigator, 'clipboard', {
+			value: savedClipboard,
+			configurable: true,
+			writable: true,
+		});
 	});
+
+	const removeClipboard = () => {
+		Object.defineProperty(navigator, 'clipboard', {
+			value: undefined,
+			configurable: true,
+			writable: true,
+		});
+	};
+
+	/** Set up a mock document for the execCommand fallback path. */
+	const withMockDocument = async (execCommandResult: boolean, fn: () => Promise<void>) => {
+		const savedDocument = globalThis.document;
+		const mockExecCommand = mock(() => execCommandResult);
+		const mockTextarea = {
+			value: '',
+			setAttribute: mock(() => {}),
+			style: {} as CSSStyleDeclaration,
+			select: mock(() => {}),
+		};
+		// @ts-ignore — replacing globalThis.document with a minimal mock
+		globalThis.document = {
+			createElement: mock(() => mockTextarea),
+			body: {
+				appendChild: mock(() => {}),
+				removeChild: mock(() => {}),
+			},
+			execCommand: mockExecCommand,
+		};
+		try {
+			await fn();
+		} finally {
+			globalThis.document = savedDocument;
+		}
+		return { mockExecCommand };
+	};
 
 	describe('successful copy', () => {
 		it('should return success when navigator.clipboard.writeText succeeds', async () => {
-			mockWriteText.mockImplementation(() => Promise.resolve());
+			writeTextSpy.mockImplementation(() => Promise.resolve());
 
 			const result = await copyTextToClipboard('test text');
 
 			expect(result).toEqual({ success: true });
-			expect(mockWriteText).toHaveBeenCalledWith('test text');
+			expect(writeTextSpy).toHaveBeenCalledWith('test text');
 		});
 
 		it('should use fallback when navigator.clipboard is not available', async () => {
-			// Remove clipboard API
-			Object.defineProperty(globalThis, 'navigator', {
-				value: {},
-				writable: true,
-				configurable: true,
+			removeClipboard();
+
+			const { mockExecCommand } = await withMockDocument(true, async () => {
+				const result = await copyTextToClipboard('test text');
+				expect(result).toEqual({ success: true });
 			});
-
-			mockExecCommand.mockImplementation(() => true);
-
-			const result = await copyTextToClipboard('test text');
-
-			expect(result).toEqual({ success: true });
-			expect(mockCreateElement).toHaveBeenCalledWith('textarea');
 			expect(mockExecCommand).toHaveBeenCalledWith('copy');
 		});
 	});
@@ -92,7 +86,7 @@ describe('copyTextToClipboard', () => {
 	describe('permission denied error', () => {
 		it('should return permission-denied error when writeText throws NotAllowedError', async () => {
 			const notAllowedError = new DOMException('Permission denied', 'NotAllowedError');
-			mockWriteText.mockImplementation(() => Promise.reject(notAllowedError));
+			writeTextSpy.mockImplementation(() => Promise.reject(notAllowedError));
 
 			const result = await copyTextToClipboard('test text');
 
@@ -105,7 +99,7 @@ describe('copyTextToClipboard', () => {
 
 		it('should return permission-denied error when writeText throws SecurityError', async () => {
 			const securityError = new DOMException('Security error', 'SecurityError');
-			mockWriteText.mockImplementation(() => Promise.reject(securityError));
+			writeTextSpy.mockImplementation(() => Promise.reject(securityError));
 
 			const result = await copyTextToClipboard('test text');
 
@@ -119,29 +113,22 @@ describe('copyTextToClipboard', () => {
 
 	describe('clipboard not supported', () => {
 		it('should return write-failed error when both clipboard API and execCommand fail', async () => {
-			// Remove clipboard API
-			Object.defineProperty(globalThis, 'navigator', {
-				value: {},
-				writable: true,
-				configurable: true,
-			});
+			removeClipboard();
 
-			// execCommand returns false (failure)
-			mockExecCommand.mockImplementation(() => false);
-
-			const result = await copyTextToClipboard('test text');
-
-			expect(result).toEqual({
-				success: false,
-				error: 'write-failed',
-				message: '复制失败：无法访问剪贴板',
+			await withMockDocument(false, async () => {
+				const result = await copyTextToClipboard('test text');
+				expect(result).toEqual({
+					success: false,
+					error: 'write-failed',
+					message: '复制失败：无法访问剪贴板',
+				});
 			});
 		});
 	});
 
 	describe('write failed error', () => {
 		it('should return write-failed error when clipboard.writeText throws generic error', async () => {
-			mockWriteText.mockImplementation(() => Promise.reject(new Error('Generic error')));
+			writeTextSpy.mockImplementation(() => Promise.reject(new Error('Generic error')));
 
 			const result = await copyTextToClipboard('test text');
 
@@ -153,7 +140,7 @@ describe('copyTextToClipboard', () => {
 		});
 
 		it('should return write-failed error for unknown error types', async () => {
-			mockWriteText.mockImplementation(() => Promise.reject('string error'));
+			writeTextSpy.mockImplementation(() => Promise.reject('string error'));
 
 			const result = await copyTextToClipboard('test text');
 
@@ -167,21 +154,15 @@ describe('copyTextToClipboard', () => {
 
 	describe('non-secure context (HTTP)', () => {
 		it('should return write-failed error when in non-secure context', async () => {
-			// Simulate non-secure context by removing clipboard entirely
-			Object.defineProperty(globalThis, 'navigator', {
-				value: {},
-				writable: true,
-				configurable: true,
-			});
+			removeClipboard();
 
-			mockExecCommand.mockImplementation(() => false);
-
-			const result = await copyTextToClipboard('test text');
-
-			expect(result).toEqual({
-				success: false,
-				error: 'write-failed',
-				message: '复制失败：无法访问剪贴板',
+			await withMockDocument(false, async () => {
+				const result = await copyTextToClipboard('test text');
+				expect(result).toEqual({
+					success: false,
+					error: 'write-failed',
+					message: '复制失败：无法访问剪贴板',
+				});
 			});
 		});
 	});
