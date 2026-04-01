@@ -28,7 +28,7 @@ await Bun.write(
   'dist/package.json',
   JSON.stringify(
     {
-      name: 'betterchat',
+      name: '@clouder0/betterchat',
       version: rootPkg.version,
       description: 'A modern web client for Rocket.Chat',
       license: 'MIT',

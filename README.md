@@ -7,7 +7,7 @@ A modern web client for [Rocket.Chat](https://rocket.chat). Connects to any unmo
 Requires [Bun](https://bun.sh) >= 1.3.
 
 ```bash
-bunx betterchat --upstream http://your-rocketchat:3000 --secret your-session-secret
+bunx @clouder0/betterchat --upstream http://your-rocketchat:3000 --secret your-session-secret
 ```
 
 Then open `http://localhost:3200` in your browser.
@@ -32,7 +32,7 @@ All flags can also be set via environment variables — see [`.env.example`](.en
 
 Behind a reverse proxy (nginx, Caddy, etc.), set:
 ```bash
-bunx betterchat --upstream http://rocketchat:3000 --secret $(openssl rand -hex 32)
+bunx @clouder0/betterchat --upstream http://rocketchat:3000 --secret $(openssl rand -hex 32)
 ```
 
 Set `BETTERCHAT_SESSION_COOKIE_SECURE=true` if serving over HTTPS.
