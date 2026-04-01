@@ -1,0 +1,13 @@
+node_modules
+.turbo
+dist
+.DS_Store
+playwright-report
+test-results
+memory/
+plans/
+handoffs/
+.claude/
+*.env.local
+.env
+tests/integration/fixtures/rocketchat-test-license.txt

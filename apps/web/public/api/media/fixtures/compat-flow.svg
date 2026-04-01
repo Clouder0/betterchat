@@ -1,0 +1,28 @@
+<svg width="1200" height="720" viewBox="0 0 1200 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="720" rx="40" fill="#F4EDE2"/>
+  <rect x="64" y="56" width="1072" height="96" rx="24" fill="#ECE3D6"/>
+  <circle cx="120" cy="104" r="12" fill="#35584B" fill-opacity="0.8"/>
+  <circle cx="160" cy="104" r="12" fill="#7E8560" fill-opacity="0.75"/>
+  <circle cx="200" cy="104" r="12" fill="#A06A4D" fill-opacity="0.78"/>
+  <text x="256" y="111" fill="#1D1A16" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="30" font-weight="700">BetterChat 兼容流程</text>
+  <rect x="92" y="212" width="280" height="170" rx="28" fill="#FBF7F0" stroke="#35584B" stroke-opacity="0.18" stroke-width="2"/>
+  <rect x="460" y="212" width="280" height="170" rx="28" fill="#FBF7F0" stroke="#7E8560" stroke-opacity="0.2" stroke-width="2"/>
+  <rect x="828" y="212" width="280" height="170" rx="28" fill="#FBF7F0" stroke="#A06A4D" stroke-opacity="0.18" stroke-width="2"/>
+  <text x="124" y="272" fill="#35584B" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="26" font-weight="700">1 · 登录与 Bootstrap</text>
+  <text x="124" y="320" fill="#5B5149" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="22">/api/public/bootstrap</text>
+  <text x="124" y="356" fill="#5B5149" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="22">/api/session/login</text>
+  <text x="492" y="272" fill="#5F6647" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="26" font-weight="700">2 · 侧栏与房间</text>
+  <text x="492" y="320" fill="#5B5149" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="22">/api/sidebar</text>
+  <text x="492" y="356" fill="#5B5149" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="22">/api/rooms/:roomId</text>
+  <text x="860" y="272" fill="#8B5E44" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="26" font-weight="700">3 · 时间线渲染</text>
+  <text x="860" y="320" fill="#5B5149" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="22">/api/rooms/:roomId/messages</text>
+  <text x="860" y="356" fill="#5B5149" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="22">markdown · math · image</text>
+  <path d="M372 298H452" stroke="#35584B" stroke-width="8" stroke-linecap="round"/>
+  <path d="M740 298H820" stroke="#7E8560" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="452" cy="298" r="10" fill="#35584B"/>
+  <circle cx="820" cy="298" r="10" fill="#7E8560"/>
+  <rect x="92" y="454" width="1016" height="176" rx="28" fill="#FBF7F0" stroke="#5B5149" stroke-opacity="0.12" stroke-width="2"/>
+  <text x="124" y="516" fill="#1D1A16" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="28" font-weight="700">实现原则</text>
+  <text x="124" y="566" fill="#5B5149" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="22">前端只消费 BetterChat 合同层，不直接调用 Rocket.Chat。</text>
+  <text x="124" y="602" fill="#5B5149" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="22">时间线保持主视觉锚点，右侧信息栏默认关闭。</text>
+</svg>

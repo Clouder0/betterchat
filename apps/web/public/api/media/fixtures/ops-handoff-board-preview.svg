@@ -1,0 +1,10 @@
+<svg width="480" height="480" viewBox="0 0 480 480" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="480" height="480" rx="36" fill="#1A2324"/>
+  <rect x="40" y="40" width="400" height="84" rx="22" fill="#202B2C"/>
+  <text x="72" y="92" fill="#F0ECE7" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="30" font-weight="700">交接结构图</text>
+  <rect x="64" y="168" width="352" height="192" rx="28" fill="#243032" stroke="#7F9F90" stroke-opacity="0.28" stroke-width="2"/>
+  <text x="100" y="244" fill="#ACC4B8" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="24" font-weight="700">Timeline Preview</text>
+  <text x="100" y="286" fill="#D2CBC2" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="18">方形预览只用于消息流</text>
+  <text x="100" y="320" fill="#D2CBC2" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="18">点击后应进入完整原图</text>
+  <circle cx="360" cy="320" r="26" fill="#7F9F90"/>
+</svg>

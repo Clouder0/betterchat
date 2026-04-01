@@ -1,0 +1,334 @@
+.trigger {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.46rem;
+	height: var(--topbar-control-height, 2.14rem);
+	padding: 0 0.76rem;
+	border: 1px solid color-mix(in srgb, var(--border-soft) 94%, transparent);
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--surface-panel) 86%, var(--surface-field));
+	color: var(--text-muted);
+	font: inherit;
+	font-size: 0.8rem;
+	line-height: 1;
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+	transition:
+		border-color 140ms ease,
+		background 140ms ease,
+		color 140ms ease;
+}
+
+.trigger:hover {
+	border-color: color-mix(in srgb, var(--border-strong) 88%, transparent);
+	background: color-mix(in srgb, var(--surface-panel-muted) 82%, var(--surface-field));
+	color: var(--text-strong);
+}
+
+.trigger:focus-visible,
+.closeButton:focus-visible,
+.segmentedButton:focus-visible,
+.optionCard:focus-visible,
+.sessionButton:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
+}
+
+.triggerIcon,
+.closeIcon {
+	width: 0.96rem;
+	height: 0.96rem;
+	flex: 0 0 auto;
+}
+
+.triggerLabel {
+	font-size: 0.79rem;
+	font-weight: 560;
+	line-height: 1;
+}
+
+.overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.04);
+}
+
+.panel {
+	position: fixed;
+	top: 1.18rem;
+	right: 1.32rem;
+	width: min(23rem, calc(100vw - 1.8rem));
+	max-height: min(34.5rem, calc(100dvh - 1.8rem));
+	padding: 1.06rem;
+	border: 1px solid color-mix(in srgb, var(--border-strong) 94%, transparent);
+	border-radius: 1rem;
+	background: color-mix(in srgb, var(--surface-panel) 94%, var(--surface-field));
+	box-shadow: var(--shadow-panel);
+	overflow-y: auto;
+}
+
+:global(html[data-theme-switching='true']) .panel {
+	transition-duration: var(--theme-switch-duration);
+	transition-property: background, background-color, border-color, color, box-shadow;
+	transition-timing-function: var(--theme-switch-easing);
+	transition-delay: 0ms;
+}
+
+.panel:focus {
+	outline: none;
+}
+
+.header,
+.sectionHeader,
+.optionCard {
+	display: flex;
+	align-items: flex-start;
+}
+
+.header {
+	justify-content: space-between;
+	gap: 1rem;
+	padding-bottom: 0.92rem;
+	border-bottom: 1px solid color-mix(in srgb, var(--border-soft) 90%, transparent);
+}
+
+.headerCopy {
+	display: flex;
+	flex-direction: column;
+	gap: 0.22rem;
+}
+
+.title,
+.sectionLabel {
+	margin: 0;
+}
+
+.title {
+	font-size: 0.96rem;
+	font-weight: 620;
+	letter-spacing: -0.01em;
+	color: var(--text-strong);
+}
+
+:global(html[data-theme-switching='true']) .title,
+:global(html[data-theme-switching='true']) .description,
+:global(html[data-theme-switching='true']) .sectionLabel,
+:global(html[data-theme-switching='true']) .sectionHint,
+:global(html[data-theme-switching='true']) .optionDescription,
+:global(html[data-theme-switching='true']) .optionTitle {
+	transition-duration: var(--theme-switch-duration);
+	transition-property: color;
+	transition-timing-function: var(--theme-switch-easing);
+	transition-delay: 0ms;
+}
+
+.description,
+.sectionHint,
+.optionDescription {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: 0.76rem;
+	line-height: 1.55;
+}
+
+.closeButton {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 1.95rem;
+	height: 1.95rem;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: 999px;
+	background: transparent;
+	color: var(--text-muted);
+	transition:
+		border-color 140ms ease,
+		background 140ms ease,
+		color 140ms ease;
+}
+
+.closeButton:hover {
+	border-color: color-mix(in srgb, var(--border-soft) 88%, transparent);
+	background: color-mix(in srgb, var(--surface-panel-soft) 74%, transparent);
+	color: var(--text-strong);
+}
+
+.section {
+	display: flex;
+	flex-direction: column;
+	gap: 0.76rem;
+	padding-top: 0.95rem;
+}
+
+.sectionHeader {
+	flex-direction: column;
+	gap: 0.24rem;
+}
+
+.sectionLabel {
+	font-family: var(--font-label);
+	font-size: 0.72rem;
+	letter-spacing: 0.02em;
+	color: var(--text-muted);
+}
+
+.segmentedGroup {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0.42rem;
+}
+
+.binarySegmentedGroup {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.42rem;
+}
+
+.segmentedButton {
+	min-height: 2.15rem;
+	padding: 0.42rem 0.6rem;
+	border: 1px solid color-mix(in srgb, var(--border-soft) 90%, transparent);
+	border-radius: 0.78rem;
+	background: color-mix(in srgb, var(--surface-field) 92%, var(--surface-panel));
+	color: var(--text-muted);
+	font: inherit;
+	font-size: 0.8rem;
+	font-weight: 560;
+	transition:
+		border-color 140ms ease,
+		background 140ms ease,
+		color 140ms ease;
+}
+
+.segmentedButton:hover {
+	border-color: color-mix(in srgb, var(--border-strong) 78%, transparent);
+	color: var(--text-strong);
+}
+
+.segmentedButton[data-active='true'] {
+	border-color: color-mix(in srgb, var(--accent) 18%, var(--border-strong));
+	background: color-mix(in srgb, var(--surface-panel-muted) 94%, var(--surface-field));
+	color: var(--text-strong);
+}
+
+.optionList {
+	display: flex;
+	flex-direction: column;
+	gap: 0.52rem;
+}
+
+.optionCard {
+	justify-content: space-between;
+	gap: 0.9rem;
+	width: 100%;
+	padding: 0.82rem 0.88rem;
+	border: 1px solid color-mix(in srgb, var(--border-soft) 90%, transparent);
+	border-radius: 0.86rem;
+	background: color-mix(in srgb, var(--surface-field) 92%, var(--surface-panel));
+	color: inherit;
+	text-align: left;
+	transition:
+		border-color 140ms ease,
+		background 140ms ease;
+}
+
+.optionCard:hover {
+	border-color: color-mix(in srgb, var(--border-strong) 80%, transparent);
+	background: color-mix(in srgb, var(--surface-panel-muted) 86%, var(--surface-field));
+}
+
+.optionCard[data-active='true'] {
+	border-color: color-mix(in srgb, var(--accent) 18%, var(--border-strong));
+	background: color-mix(in srgb, var(--surface-panel-muted) 94%, var(--surface-field));
+}
+
+.optionCopy {
+	display: flex;
+	flex-direction: column;
+	gap: 0.2rem;
+	min-width: 0;
+}
+
+.optionTitle {
+	font-size: 0.82rem;
+	font-weight: 590;
+	color: var(--text-strong);
+}
+
+.optionIndicator {
+	width: 0.7rem;
+	height: 0.7rem;
+	margin-top: 0.1rem;
+	border-radius: 999px;
+	border: 1px solid color-mix(in srgb, var(--border-strong) 82%, transparent);
+	background: transparent;
+	flex: 0 0 auto;
+}
+
+.optionCard[data-active='true'] .optionIndicator {
+	border-color: color-mix(in srgb, var(--accent) 32%, var(--border-strong));
+	background: color-mix(in srgb, var(--accent) 22%, var(--surface-panel));
+}
+
+.sessionActions {
+	display: flex;
+	justify-content: flex-start;
+}
+
+.sessionButton {
+	min-height: 2.1rem;
+	padding: 0.42rem 0.82rem;
+	border: 1px solid color-mix(in srgb, var(--border-strong) 82%, transparent);
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--surface-field) 92%, var(--surface-panel));
+	color: var(--text-strong);
+	font: inherit;
+	font-size: 0.79rem;
+	font-weight: 560;
+	transition:
+		border-color 140ms ease,
+		background 140ms ease,
+		color 140ms ease,
+		opacity 140ms ease;
+}
+
+.sessionButton:hover:not(:disabled) {
+	border-color: color-mix(in srgb, var(--border-strong) 100%, transparent);
+	background: color-mix(in srgb, var(--surface-panel-muted) 90%, var(--surface-field));
+}
+
+.sessionButton:disabled {
+	opacity: 0.56;
+	cursor: default;
+}
+
+@media (max-width: 900px) {
+	.panel {
+		top: auto;
+		right: 0.9rem;
+		bottom: 0.9rem;
+		max-height: min(34.5rem, calc(100dvh - 1.2rem));
+	}
+}
+
+@media (max-width: 640px) {
+	.triggerLabel {
+		display: none;
+	}
+
+	.trigger {
+		width: 2.18rem;
+		padding: 0;
+		justify-content: center;
+	}
+
+	.panel {
+		left: 0.9rem;
+		width: auto;
+	}
+
+	.segmentedGroup {
+		grid-template-columns: 1fr;
+	}
+}

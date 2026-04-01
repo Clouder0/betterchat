@@ -1,0 +1,23 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" rx="44" fill="#172021"/>
+  <rect x="72" y="68" width="1456" height="104" rx="26" fill="#1B2425"/>
+  <text x="112" y="133" fill="#F0ECE7" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="38" font-weight="700">运营协调 · 交接结构图</text>
+  <rect x="108" y="240" width="360" height="220" rx="28" fill="#202B2C" stroke="#7F9F90" stroke-opacity="0.28" stroke-width="2"/>
+  <rect x="620" y="240" width="360" height="220" rx="28" fill="#202B2C" stroke="#A1AC88" stroke-opacity="0.28" stroke-width="2"/>
+  <rect x="1132" y="240" width="360" height="220" rx="28" fill="#202B2C" stroke="#C79272" stroke-opacity="0.28" stroke-width="2"/>
+  <text x="144" y="318" fill="#ACC4B8" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="32" font-weight="700">侧栏</text>
+  <text x="144" y="370" fill="#D2CBC2" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="24">收藏 / 房间 / 私信</text>
+  <text x="656" y="318" fill="#D4DDC5" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="32" font-weight="700">时间线</text>
+  <text x="656" y="370" fill="#D2CBC2" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="24">回复跳转 · 未读分隔 · 富内容</text>
+  <text x="1168" y="318" fill="#D7B08F" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="32" font-weight="700">补充面板</text>
+  <text x="1168" y="370" fill="#D2CBC2" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="24">房间信息默认收起</text>
+  <path d="M468 348H592" stroke="#7F9F90" stroke-width="10" stroke-linecap="round"/>
+  <path d="M980 348H1104" stroke="#A1AC88" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="592" cy="348" r="12" fill="#7F9F90"/>
+  <circle cx="1104" cy="348" r="12" fill="#A1AC88"/>
+  <rect x="108" y="548" width="1384" height="240" rx="32" fill="#1B2425" stroke="#F0ECE7" stroke-opacity="0.08" stroke-width="2"/>
+  <text x="152" y="626" fill="#F0ECE7" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="34" font-weight="700">低噪阅读优先</text>
+  <text x="152" y="690" fill="#D2CBC2" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="24">• 先看未读，再看上下文</text>
+  <text x="152" y="734" fill="#D2CBC2" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="24">• 图片、代码、公式都属于同一个产品语气</text>
+  <text x="152" y="778" fill="#D2CBC2" font-family="PingFang SC, Noto Sans SC, sans-serif" font-size="24">• 交互提示只服务阅读，不喧宾夺主</text>
+</svg>

@@ -1,0 +1,126 @@
+.frame {
+	min-height: 100vh;
+	max-width: 1440px;
+	padding: 1.8rem 2rem 2.1rem;
+	margin: 0 auto;
+	background:
+		radial-gradient(72rem 28rem at -8% -8%, color-mix(in srgb, var(--accent) 8%, transparent), transparent 72%),
+		radial-gradient(56rem 24rem at 108% 0%, color-mix(in srgb, var(--support) 7%, transparent), transparent 74%),
+		linear-gradient(
+			180deg,
+			color-mix(in srgb, var(--bg-canvas) 95%, white),
+			var(--bg-canvas) 28rem,
+			color-mix(in srgb, var(--bg-canvas) 97%, black)
+		);
+	color: var(--text-strong);
+}
+
+.header {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	gap: 1.15rem;
+	align-items: center;
+	padding: 0 0 1rem;
+	margin-bottom: 1.75rem;
+	border-bottom: 1px solid var(--border-strong);
+}
+
+.brandBlock {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.8rem;
+	min-width: 0;
+}
+
+.brandMark {
+	width: 0.7rem;
+	height: 0.7rem;
+	border-radius: 0.18rem;
+	background: var(--accent);
+	flex: 0 0 auto;
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 20%, var(--border-strong));
+}
+
+.brandEyebrow {
+	margin: 0;
+	font-family: var(--font-label);
+	font-size: 0.72rem;
+	letter-spacing: 0.02em;
+	color: var(--text-muted);
+}
+
+.brandTitle {
+	margin: 0.1rem 0 0;
+	font-size: 1.15rem;
+	font-weight: 620;
+	letter-spacing: -0.02em;
+}
+
+.nav {
+	display: inline-flex;
+	justify-content: center;
+	flex-wrap: wrap;
+	gap: 1rem;
+}
+
+.navLink {
+	padding: 0.38rem 0;
+	border-bottom: 2px solid transparent;
+	color: var(--text-muted);
+	text-decoration: none;
+	font-size: 0.92rem;
+	font-weight: 560;
+	transition:
+		color 140ms ease,
+		border-color 140ms ease;
+}
+
+.navLink:hover {
+	color: color-mix(in srgb, var(--accent) 40%, var(--text-strong));
+}
+
+.navLink[data-active='true'] {
+	color: var(--text-strong);
+	border-color: var(--accent);
+}
+
+.controls {
+	display: inline-flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 1rem;
+}
+
+.environmentPill {
+	font-family: var(--font-label);
+	font-size: 0.76rem;
+	letter-spacing: 0.02em;
+	color: color-mix(in srgb, var(--alloy) 36%, var(--text-muted));
+}
+
+.content {
+	display: flex;
+	flex-direction: column;
+	gap: 1.75rem;
+}
+
+@media (max-width: 1180px) {
+	.header {
+		grid-template-columns: 1fr;
+	}
+
+	.nav {
+		justify-content: flex-start;
+	}
+
+	.controls {
+		justify-content: space-between;
+		flex-wrap: wrap;
+	}
+}
+
+@media (max-width: 720px) {
+	.frame {
+		padding: 1.25rem 1rem 1.5rem;
+	}
+}

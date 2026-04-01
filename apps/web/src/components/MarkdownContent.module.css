@@ -1,0 +1,458 @@
+.markdown {
+	color: var(--text-soft);
+	font-size: 0.98rem;
+	line-height: 1.85;
+}
+
+.dense {
+	font-size: 0.985rem;
+	line-height: 1.82;
+}
+
+.dense p,
+.dense li {
+	white-space: pre-line;
+}
+
+.markdown > :first-child {
+	margin-top: 0;
+}
+
+.markdown > :last-child {
+	margin-bottom: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+	margin: 1.6em 0 0.7em;
+	color: var(--text-strong);
+	font-weight: 640;
+	line-height: 1.28;
+	letter-spacing: -0.01em;
+}
+
+.markdown h1 {
+	font-size: 1.72rem;
+}
+
+.markdown h2 {
+	font-size: 1.28rem;
+}
+
+.markdown h3 {
+	font-size: 1.08rem;
+}
+
+.dense h1 {
+	font-size: 1.22rem;
+}
+
+.dense h2 {
+	font-size: 1.06rem;
+}
+
+.dense h3 {
+	font-size: 1rem;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown figure {
+	margin: 0 0 1rem;
+}
+
+.markdown ul,
+.markdown ol {
+	padding-left: 1.4rem;
+}
+
+.markdown li + li {
+	margin-top: 0.45rem;
+}
+
+.markdown strong {
+	color: var(--text-strong);
+	font-weight: 640;
+}
+
+.markdown hr {
+	margin: 1.4rem 0;
+	border: 0;
+	border-top: 1px solid var(--border-soft);
+}
+
+.link {
+	position: relative;
+	color: color-mix(in srgb, var(--accent) 82%, var(--text-strong));
+	text-decoration: underline;
+	text-decoration-thickness: 0.06em;
+	text-underline-offset: 0.16em;
+	text-decoration-color: color-mix(in srgb, var(--accent) 28%, transparent);
+	background-image: linear-gradient(color-mix(in srgb, var(--accent-strong) 86%, var(--accent)), color-mix(in srgb, var(--accent-strong) 86%, var(--accent)));
+	background-repeat: no-repeat;
+	background-position: 0 calc(100% - 0.02em);
+	background-size: 0% 1px;
+	transition:
+		color 140ms ease,
+		text-decoration-color 180ms ease,
+		background-size 180ms ease;
+}
+
+.link:hover,
+.link:focus-visible {
+	color: color-mix(in srgb, var(--accent-strong) 84%, var(--text-strong));
+	text-decoration-color: transparent;
+	background-size: 100% 1px;
+}
+
+.link:focus-visible {
+	outline: none;
+}
+
+.inlineCode {
+	padding: 0.12rem 0.38rem;
+	border: 1px solid color-mix(in srgb, var(--code-inline-border) 82%, transparent);
+	border-radius: 0.4rem;
+	background: var(--code-inline-surface);
+	font-family: var(--font-mono);
+	font-size: 0.92em;
+	color: var(--code-inline-text);
+}
+
+.mentionInline {
+	display: inline;
+	padding: 0.01rem 0.24rem 0.05rem;
+	border-radius: 0.34rem;
+	background: color-mix(in srgb, var(--accent) 9%, transparent);
+	color: color-mix(in srgb, var(--accent-strong) 14%, var(--text-strong));
+	font-weight: 620;
+	box-decoration-break: clone;
+	-webkit-box-decoration-break: clone;
+}
+
+.mentionInteractive {
+	border: 0;
+	cursor: pointer;
+	transition:
+		background-color 140ms ease,
+		box-shadow 140ms ease,
+		color 140ms ease;
+}
+
+.mentionInteractive:hover {
+	background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.mentionInteractive:focus-visible {
+	outline: none;
+	background: color-mix(in srgb, var(--accent) 16%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.mentionInline[data-mention-tone='self'] {
+	background: color-mix(in srgb, var(--warning) 16%, var(--surface-panel-soft));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 20%, transparent);
+	color: color-mix(in srgb, var(--warning) 78%, var(--text-strong));
+	font-weight: 640;
+}
+
+.mentionInteractive[data-mention-tone='self']:hover,
+.mentionInteractive[data-mention-tone='self']:focus-visible {
+	background: color-mix(in srgb, var(--warning) 20%, var(--surface-panel-soft));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.codeBlock {
+	margin: 0 0 1rem;
+	border: 1px solid var(--code-border);
+	border-radius: 1rem;
+	overflow: hidden;
+	background: linear-gradient(180deg, var(--code-surface-top) 0%, var(--code-surface) 24%, var(--code-surface) 100%);
+	box-shadow: var(--code-shadow);
+}
+
+.codeHeader {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 0.55rem 0.85rem;
+	border-bottom: 1px solid color-mix(in srgb, var(--code-border) 96%, transparent);
+	background: var(--code-header-surface);
+	box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--code-border) 58%, transparent);
+	color: var(--code-muted);
+}
+
+.codeMeta {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-width: 0;
+}
+
+.codeLabel {
+	font-family: var(--font-label);
+	font-size: 0.74rem;
+	letter-spacing: 0.02em;
+}
+
+.codeLanguage {
+	padding: 0.12rem 0.44rem;
+	border: 1px solid color-mix(in srgb, var(--code-border) 88%, transparent);
+	border-radius: 0.46rem;
+	background: var(--code-language-surface);
+	font-family: var(--font-mono);
+	font-size: 0.72rem;
+	color: var(--code-language-text);
+}
+
+.copyButton {
+	padding: 0;
+	border: 0;
+	border-bottom: 1px solid transparent;
+	background: transparent;
+	color: var(--code-muted);
+	font: inherit;
+	font-size: 0.78rem;
+	font-weight: 560;
+	cursor: pointer;
+	transition:
+		color 140ms ease,
+		border-color 140ms ease;
+}
+
+.copyButton:hover {
+	color: var(--code-text);
+	border-color: color-mix(in srgb, var(--code-accent) 26%, transparent);
+}
+
+.copyButton[data-state='copied'] {
+	color: var(--code-accent);
+}
+
+.pre {
+	margin: 0;
+	padding: 0.92rem 1rem 1rem;
+	overflow-x: auto;
+}
+
+.pre code {
+	display: block;
+	min-width: max-content;
+	font-family: var(--font-mono);
+	font-size: 0.88rem;
+	line-height: 1.78;
+	color: var(--code-text);
+}
+
+.pre :global(.hljs) {
+	background: transparent;
+	color: var(--code-text);
+}
+
+.pre :global(.hljs-comment),
+.pre :global(.hljs-quote) {
+	color: var(--code-muted);
+	font-style: italic;
+}
+
+.pre :global(.hljs-keyword),
+.pre :global(.hljs-selector-tag),
+.pre :global(.hljs-literal),
+.pre :global(.hljs-doctag) {
+	color: var(--code-keyword);
+}
+
+.pre :global(.hljs-string),
+.pre :global(.hljs-attr),
+.pre :global(.hljs-regexp),
+.pre :global(.hljs-template-variable) {
+	color: var(--code-string);
+}
+
+.pre :global(.hljs-title),
+.pre :global(.hljs-section),
+.pre :global(.hljs-function),
+.pre :global(.hljs-variable),
+.pre :global(.hljs-property) {
+	color: var(--code-entity);
+}
+
+.pre :global(.hljs-number),
+.pre :global(.hljs-symbol),
+.pre :global(.hljs-bullet),
+.pre :global(.hljs-meta) {
+	color: var(--code-symbol);
+}
+
+.pre :global(.hljs-type),
+.pre :global(.hljs-class .hljs-title),
+.pre :global(.hljs-built_in) {
+	color: var(--code-entity);
+}
+
+.tableWrap {
+	margin: 0 0 1rem;
+	overflow-x: auto;
+}
+
+.tableWrap table {
+	width: 100%;
+	min-width: 28rem;
+	border-collapse: collapse;
+	border-spacing: 0;
+}
+
+.tableWrap th,
+.tableWrap td {
+	padding: 0.72rem 0.8rem;
+	border-bottom: 1px solid var(--border-soft);
+	text-align: left;
+	vertical-align: top;
+}
+
+.tableWrap th {
+	color: var(--text-strong);
+	font-weight: 620;
+	background: color-mix(in srgb, var(--support-soft) 42%, var(--bg-panel));
+}
+
+.tableWrap tr:last-child td {
+	border-bottom: 0;
+}
+
+.image {
+	display: block;
+	margin: 0 0 1rem;
+	max-width: min(100%, 44rem);
+	width: auto;
+	height: auto;
+	border: 1px solid var(--border-soft);
+	border-radius: 0.98rem;
+	background: var(--surface-panel-soft);
+	box-shadow: var(--shadow-panel);
+}
+
+.markdown blockquote {
+	position: relative;
+	margin-right: 0.72rem;
+	padding: 0.56rem 1.04rem 0.6rem 0.98rem;
+	border-left: 0.14rem solid var(--quote-rail);
+	border-radius: 0 0.72rem 0.72rem 0;
+	background: var(--quote-surface);
+	box-shadow: inset 0 0 0 1px var(--quote-border);
+	color: var(--quote-text);
+}
+
+.markdown blockquote::before {
+	content: none;
+}
+
+.markdown blockquote::after {
+	content: none;
+}
+
+.markdown blockquote > * {
+	position: static;
+	z-index: auto;
+}
+
+.markdown blockquote :where(p, ul, ol, figure, pre) {
+	margin-bottom: 0.72rem;
+}
+
+.markdown blockquote ul,
+.markdown blockquote ol {
+	padding-left: 0.98rem;
+}
+
+.markdown blockquote > :first-child {
+	margin-top: 0;
+}
+
+.markdown blockquote > :last-child {
+	margin-bottom: 0;
+}
+
+.markdown :global(.contains-task-list) {
+	list-style: none;
+	padding-left: 0;
+}
+
+.markdown :global(.task-list-item) {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.65rem;
+}
+
+.markdown :global(.task-list-item input) {
+	margin-top: 0.3rem;
+	accent-color: var(--accent);
+}
+
+.markdown :global(.katex) {
+	font-size: 1.02em;
+	color: var(--text-strong);
+}
+
+.markdown :global(.katex-display) {
+	margin: 1.02rem 0 1.08rem;
+	padding: 0.08rem 0 0.22rem;
+	overflow-x: auto;
+	overflow-y: hidden;
+	background: transparent;
+	scrollbar-width: thin;
+	scrollbar-color: color-mix(in srgb, var(--text-faint) 64%, transparent) transparent;
+}
+
+.markdown :global(.katex-display::-webkit-scrollbar) {
+	height: 0.42rem;
+}
+
+.markdown :global(.katex-display::-webkit-scrollbar-track) {
+	background: transparent;
+}
+
+.markdown :global(.katex-display::-webkit-scrollbar-thumb) {
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--text-faint) 64%, transparent);
+}
+
+.markdown :global(.katex-display::-webkit-scrollbar-thumb:hover) {
+	background: color-mix(in srgb, var(--text-muted) 72%, transparent);
+}
+
+.dense :global(.katex-display) {
+	margin: 0.94rem 0 1rem;
+	padding: 0.04rem 0 0.18rem;
+}
+
+.dense blockquote {
+	margin-right: 0.56rem;
+	padding: 0.48rem 0.88rem 0.5rem 0.9rem;
+	border-radius: 0 0.64rem 0.64rem 0;
+}
+
+.dense blockquote::before {
+	content: none;
+}
+
+.dense blockquote::after {
+	content: none;
+}
+
+.dense .codeBlock {
+	border-radius: 0.85rem;
+}
+
+.dense .codeHeader {
+	padding: 0.48rem 0.75rem;
+}
+
+.dense .pre {
+	padding: 0.78rem 0.85rem 0.88rem;
+}

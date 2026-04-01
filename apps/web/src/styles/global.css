@@ -1,0 +1,211 @@
+:root {
+	--font-ui: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "IBM Plex Sans", "Segoe UI", sans-serif;
+	--font-label: "PingFang SC", "Hiragino Sans GB", "Noto Sans CJK SC", "Noto Sans SC", "Source Han Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+	--font-mono: "IBM Plex Mono", "Sarasa Mono SC", "Noto Sans Mono CJK SC", "SFMono-Regular", "Consolas", monospace;
+	--radius-panel: 1.02rem;
+	--radius-control: 0.78rem;
+	--focus-ring: color-mix(in srgb, var(--accent) 48%, white);
+	--shadow-panel: 0 12px 28px rgba(20, 16, 12, 0.05);
+	--shadow-panel-strong: 0 24px 56px rgba(6, 10, 18, 0.16);
+	--theme-switch-duration: 180ms;
+	--theme-switch-easing: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+:root,
+:root[data-theme='light'] {
+	--bg-canvas: #f4efe6;
+	--bg-panel: #fbf7f0;
+	--bg-elevated: #f2ebe1;
+	--bg-subtle: #e7dece;
+	--text-strong: #1d1a16;
+	--text-soft: #5b5149;
+	--text-muted: #867a6d;
+	--text-faint: #a79b8f;
+	--border-strong: rgba(29, 26, 22, 0.12);
+	--border-soft: rgba(29, 26, 22, 0.08);
+	--accent: #35584b;
+	--accent-strong: #22382f;
+	--accent-soft: rgba(53, 88, 75, 0.12);
+	--support: #7e8560;
+	--support-soft: rgba(126, 133, 96, 0.12);
+	--alloy: #a06a4d;
+	--alloy-soft: rgba(160, 106, 77, 0.13);
+	--success: #2d7b63;
+	--warning: #a06a4d;
+	--surface-panel: #faf5ee;
+	--surface-panel-soft: #f4ede2;
+	--surface-panel-muted: #efe7db;
+	--surface-field: #f2eadf;
+	--surface-accent-soft: rgba(53, 88, 75, 0.08);
+	--code-surface-top: #f9f4ec;
+	--code-surface: #f4ede2;
+	--code-header-surface: #ece3d6;
+	--code-language-surface: #f6efe4;
+	--code-language-text: #463d33;
+	--code-inline-surface: rgba(247, 240, 231, 0.9);
+	--code-inline-border: rgba(91, 81, 73, 0.14);
+	--code-inline-text: #2f2a24;
+	--code-border: rgba(91, 81, 73, 0.14);
+	--code-text: #2f2a24;
+	--code-muted: #84776a;
+	--code-accent: #35584b;
+	--code-keyword: #5f7054;
+	--code-entity: #2f2a24;
+	--code-string: #9b694f;
+	--code-symbol: #6f8177;
+	--code-shadow: 0 10px 22px rgba(36, 28, 20, 0.03);
+	--quote-surface: #f5efe6;
+	--quote-border: rgba(91, 81, 73, 0.05);
+	--quote-rail: #7a8468;
+	--quote-text: #544a42;
+}
+
+:root[data-theme='dark'] {
+	--bg-canvas: #101516;
+	--bg-panel: #151c1d;
+	--bg-elevated: #1c2526;
+	--bg-subtle: #263133;
+	--text-strong: #f0ece7;
+	--text-soft: #d2cbc2;
+	--text-muted: #a89d91;
+	--text-faint: #7f7469;
+	--border-strong: rgba(240, 236, 231, 0.12);
+	--border-soft: rgba(240, 236, 231, 0.08);
+	--accent: #7f9f90;
+	--accent-strong: #acc4b8;
+	--accent-soft: rgba(127, 159, 144, 0.18);
+	--support: #a1ac88;
+	--support-soft: rgba(161, 172, 136, 0.16);
+	--alloy: #c79272;
+	--alloy-soft: rgba(199, 146, 114, 0.16);
+	--success: #56a184;
+	--warning: #c79272;
+	--surface-panel: #172021;
+	--surface-panel-soft: #1b2425;
+	--surface-panel-muted: #1e2829;
+	--surface-field: #202b2c;
+	--surface-accent-soft: rgba(127, 159, 144, 0.12);
+	--code-surface-top: #111817;
+	--code-surface: #0c1211;
+	--code-header-surface: #182220;
+	--code-language-surface: #23302d;
+	--code-language-text: #ddd7d0;
+	--code-inline-surface: rgba(27, 36, 35, 0.9);
+	--code-inline-border: rgba(240, 236, 231, 0.12);
+	--code-inline-text: #ece8e2;
+	--code-border: rgba(240, 236, 231, 0.14);
+	--code-text: #ece8e2;
+	--code-muted: #9e978f;
+	--code-accent: #acc4b8;
+	--code-keyword: #bac7b5;
+	--code-entity: #eef0ea;
+	--code-string: #d7b08f;
+	--code-symbol: #97aea2;
+	--code-shadow: 0 16px 32px rgba(0, 0, 0, 0.22);
+	--quote-surface: #18201f;
+	--quote-border: rgba(240, 236, 231, 0.06);
+	--quote-rail: #8ea394;
+	--quote-text: #d7d0c7;
+	--shadow-panel: 0 18px 40px rgba(0, 0, 0, 0.28);
+	--shadow-panel-strong: 0 30px 76px rgba(0, 0, 0, 0.4);
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html {
+	color-scheme: light;
+	font-size: 16px;
+	background: var(--bg-canvas);
+}
+
+html[data-theme='dark'] {
+	color-scheme: dark;
+}
+
+body {
+	margin: 0;
+	min-width: 320px;
+	background: var(--bg-canvas);
+	color: var(--text-strong);
+	font-family: var(--font-ui);
+	line-height: 1.62;
+	font-synthesis: none;
+	text-rendering: optimizeLegibility;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+	background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+button,
+input,
+textarea {
+	font: inherit;
+}
+
+button {
+	appearance: none;
+}
+
+:where(button:not(:disabled), [role='button']:not([aria-disabled='true'])) {
+	cursor: pointer;
+}
+
+a {
+	color: inherit;
+}
+
+#root {
+	min-height: 100vh;
+}
+
+html[data-theme-switching='true'] :where(body, [data-theme-surface='true'], .pswp, .pswp *) {
+	transition-duration: var(--theme-switch-duration);
+	transition-property: background, background-color, border-color, color, fill, stroke, box-shadow, outline-color, text-decoration-color, caret-color;
+	transition-timing-function: var(--theme-switch-easing);
+	transition-delay: 0ms;
+}
+
+html[data-theme-switching='true'] :where(body::before, body::after, [data-theme-surface='true']::before, [data-theme-surface='true']::after, .pswp *::before, .pswp *::after) {
+	transition-duration: var(--theme-switch-duration);
+	transition-property: background, background-color, border-color, color, fill, stroke, box-shadow, outline-color, text-decoration-color;
+	transition-timing-function: var(--theme-switch-easing);
+	transition-delay: 0ms;
+}
+
+html[data-theme-switching='true'] :where(input::placeholder, textarea::placeholder) {
+	transition-duration: var(--theme-switch-duration);
+	transition-property: color;
+	transition-timing-function: var(--theme-switch-easing);
+	transition-delay: 0ms;
+}
+
+html[data-motion='off'] {
+	scroll-behavior: auto;
+}
+
+html[data-motion='off'] :where(*, *::before, *::after) {
+	animation: none !important;
+	transition-duration: 0ms !important;
+	transition-delay: 0ms !important;
+	transition-property: none !important;
+	scroll-behavior: auto !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	html[data-theme-switching='true'] :where(body, [data-theme-surface='true'], .pswp, .pswp *) {
+		transition: none;
+	}
+
+	html[data-theme-switching='true'] :where(body::before, body::after, [data-theme-surface='true']::before, [data-theme-surface='true']::after, .pswp *::before, .pswp *::after) {
+		transition: none;
+	}
+
+	html[data-theme-switching='true'] :where(input::placeholder, textarea::placeholder) {
+		transition: none;
+	}
+}

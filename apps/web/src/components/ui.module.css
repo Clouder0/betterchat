@@ -1,0 +1,291 @@
+.section {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.sectionHeader {
+	display: flex;
+	flex-direction: column;
+	gap: 0.46rem;
+}
+
+.eyebrow {
+	margin: 0;
+	font-family: var(--font-label);
+	font-size: 0.72rem;
+	letter-spacing: 0.02em;
+	color: var(--text-muted);
+}
+
+.sectionTitle {
+	margin: 0;
+	font-size: clamp(1.55rem, 1.9vw, 2.25rem);
+	line-height: 1.12;
+	letter-spacing: -0.02em;
+}
+
+.sectionDescription {
+	max-width: 62ch;
+	margin: 0;
+	color: var(--text-soft);
+	line-height: 1.62;
+}
+
+.panel {
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-panel);
+	padding: 1.2rem 1.25rem;
+	background: var(--surface-panel);
+	box-shadow: var(--shadow-panel);
+}
+
+.metricCard {
+	display: flex;
+	flex-direction: column;
+	gap: 0.45rem;
+	padding: 1rem 1.05rem;
+	border: 1px solid var(--border-soft);
+	border-radius: var(--radius-panel);
+	background: var(--surface-panel-soft);
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.metricLabel {
+	margin: 0;
+	font-family: var(--font-label);
+	font-size: 0.72rem;
+	letter-spacing: 0.02em;
+	color: var(--text-muted);
+}
+
+.metricValue {
+	font-size: 1.55rem;
+	font-weight: 640;
+	letter-spacing: -0.02em;
+}
+
+.metricHint {
+	margin: 0;
+	color: var(--text-soft);
+	line-height: 1.5;
+}
+
+.tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 0.32rem 0.58rem;
+	border-radius: 999px;
+	font-size: 0.76rem;
+	font-weight: 560;
+	border: 1px solid var(--border-soft);
+	background: var(--surface-panel-soft);
+	color: var(--text-soft);
+}
+
+.tag[data-tone='accent'] {
+	background: color-mix(in srgb, var(--accent-soft) 70%, var(--surface-panel-soft));
+	border-color: color-mix(in srgb, var(--accent) 24%, var(--border-strong));
+	color: color-mix(in srgb, var(--accent-strong) 34%, var(--text-strong));
+}
+
+.tag[data-tone='support'] {
+	background: color-mix(in srgb, var(--support-soft) 72%, var(--surface-panel-soft));
+	border-color: color-mix(in srgb, var(--support) 24%, var(--border-strong));
+	color: color-mix(in srgb, var(--support) 34%, var(--text-strong));
+}
+
+.tag[data-tone='success'] {
+	background: color-mix(in srgb, var(--success) 9%, var(--surface-panel-soft));
+	border-color: color-mix(in srgb, var(--success) 20%, var(--border-strong));
+	color: color-mix(in srgb, var(--success) 40%, var(--text-strong));
+}
+
+.tag[data-tone='warning'] {
+	background: color-mix(in srgb, var(--alloy-soft) 90%, var(--surface-panel-soft));
+	border-color: color-mix(in srgb, var(--warning) 20%, var(--border-strong));
+	color: color-mix(in srgb, var(--warning) 34%, var(--text-strong));
+}
+
+.button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.45rem;
+	padding: 0.7rem 0.96rem;
+	border-radius: var(--radius-control);
+	border: 1px solid var(--border-soft);
+	font: inherit;
+	font-size: 0.9rem;
+	font-weight: 570;
+	cursor: pointer;
+	box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+	transition:
+		background 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease,
+		transform 140ms ease;
+}
+
+.button[data-tone='primary'] {
+	background: color-mix(in srgb, var(--accent) 92%, white);
+	border-color: color-mix(in srgb, var(--accent-strong) 74%, var(--accent));
+	color: white;
+	box-shadow:
+		inset 0 1px 0 rgba(255, 255, 255, 0.16),
+		0 8px 20px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.button[data-tone='secondary'] {
+	background: var(--surface-field);
+	border-color: color-mix(in srgb, var(--support) 16%, var(--border-strong));
+	color: var(--text-strong);
+}
+
+.button[data-tone='ghost'] {
+	background: transparent;
+	border-color: transparent;
+	color: var(--text-soft);
+}
+
+.button:hover {
+	border-color: color-mix(in srgb, var(--accent) 20%, var(--border-strong));
+	transform: translateY(-1px);
+}
+
+.button[data-tone='primary']:hover {
+	background: color-mix(in srgb, var(--accent) 88%, white);
+}
+
+.button[data-tone='secondary']:hover,
+.button[data-tone='ghost']:hover {
+	background: color-mix(in srgb, var(--surface-accent-soft) 55%, var(--surface-field));
+}
+
+.button:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
+}
+
+.button:disabled {
+	opacity: 0.56;
+	cursor: not-allowed;
+	transform: none;
+	box-shadow: none;
+}
+
+.field {
+	display: flex;
+	flex-direction: column;
+	gap: 0.55rem;
+}
+
+.fieldLabel {
+	font-family: var(--font-label);
+	font-size: 0.72rem;
+	letter-spacing: 0.02em;
+	color: var(--text-muted);
+}
+
+.input {
+	padding: 0.85rem 0.95rem;
+	border-radius: var(--radius-control);
+	border: 1px solid var(--border-strong);
+	background: var(--surface-field);
+	color: var(--text-strong);
+	font: inherit;
+}
+
+.input::placeholder {
+	color: var(--text-faint);
+}
+
+.input:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
+}
+
+.tabs {
+	display: flex;
+	flex-direction: column;
+	gap: 1.1rem;
+}
+
+.tabsList {
+	display: inline-flex;
+	align-self: flex-start;
+	gap: 1.05rem;
+	padding-bottom: 0.18rem;
+	border-bottom: 1px solid var(--border-strong);
+}
+
+.tabsTrigger {
+	padding: 0.3rem 0.04rem 0.42rem;
+	border: 0;
+	border-bottom: 2px solid transparent;
+	background: transparent;
+	color: var(--text-muted);
+	font: inherit;
+	font-size: 0.9rem;
+	font-weight: 560;
+	cursor: pointer;
+}
+
+.tabsTrigger[data-state='active'] {
+	color: var(--text-strong);
+	border-color: var(--accent);
+}
+
+.tabsTrigger:hover {
+	color: var(--text-soft);
+}
+
+.tabsContent {
+	display: flex;
+	flex-direction: column;
+	gap: 1rem;
+}
+
+.dialogOverlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(7, 10, 15, 0.62);
+	backdrop-filter: blur(10px);
+}
+
+.dialogContent {
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	width: min(32rem, calc(100vw - 2rem));
+	transform: translate(-50%, -50%);
+	padding: 1.35rem;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-panel);
+	background: var(--surface-panel);
+	box-shadow: var(--shadow-panel-strong);
+}
+
+.dialogTitle {
+	margin: 0 0 0.4rem;
+	font-size: 1.45rem;
+	letter-spacing: -0.02em;
+}
+
+.dialogDescription {
+	margin: 0;
+	color: var(--text-soft);
+	line-height: 1.55;
+}
+
+.dialogBody {
+	margin-top: 1rem;
+}
+
+.dialogActions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.75rem;
+	margin-top: 1.1rem;
+}

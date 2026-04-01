@@ -1,0 +1,520 @@
+.overlay {
+	position: fixed;
+	inset: 0;
+	background: rgba(0, 0, 0, 0.08);
+}
+
+.panel {
+	--forward-scrollbar-width: 0.7rem;
+	--forward-scrollbar-thumb: color-mix(in srgb, var(--text-faint) 68%, transparent);
+	--forward-scrollbar-thumb-hover: color-mix(in srgb, var(--text-muted) 74%, transparent);
+	position: fixed;
+	inset: 50% auto auto 50%;
+	display: grid;
+	grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+	gap: 0.76rem;
+	width: min(44rem, calc(100vw - 2rem));
+	height: min(41rem, calc(100vh - 2rem));
+	max-height: calc(100vh - 2rem);
+	padding: 1rem;
+	border: 1px solid color-mix(in srgb, var(--border-strong) 94%, transparent);
+	border-radius: 1rem;
+	background: color-mix(in srgb, var(--surface-panel) 96%, var(--surface-field));
+	box-shadow: var(--shadow-panel);
+	transform: translate(-50%, -50%);
+	overflow: hidden;
+}
+
+.panel:focus {
+	outline: none;
+}
+
+.roomList::-webkit-scrollbar,
+.noteField::-webkit-scrollbar {
+	width: var(--forward-scrollbar-width);
+}
+
+.roomList::-webkit-scrollbar-track,
+.noteField::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.roomList::-webkit-scrollbar-thumb,
+.noteField::-webkit-scrollbar-thumb {
+	border: 0.18rem solid transparent;
+	border-radius: 999px;
+	background: var(--forward-scrollbar-thumb);
+	background-clip: padding-box;
+}
+
+.roomList::-webkit-scrollbar-thumb:hover,
+.noteField::-webkit-scrollbar-thumb:hover {
+	background: var(--forward-scrollbar-thumb-hover);
+	background-clip: padding-box;
+}
+
+.header,
+.footer,
+.roomOption {
+	display: flex;
+}
+
+.header {
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1rem;
+}
+
+.headerCopy,
+.section,
+.previewSection,
+.roomGroupBody,
+.roomCopy {
+	display: flex;
+	flex-direction: column;
+}
+
+.headerCopy {
+	gap: 0.22rem;
+}
+
+.title,
+.description,
+.sectionLabel,
+.groupTitle {
+	margin: 0;
+}
+
+.title {
+	font-size: 1rem;
+	font-weight: 620;
+	letter-spacing: -0.01em;
+	color: var(--text-strong);
+}
+
+.description,
+.roomSubtitle {
+	color: var(--text-muted);
+	font-size: 0.78rem;
+	line-height: 1.5;
+}
+
+.closeButton {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 2rem;
+	height: 2rem;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: 999px;
+	background: transparent;
+	color: var(--text-muted);
+	transition:
+		background 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease;
+}
+
+.closeButton:hover,
+.roomOption:hover,
+.submitButton:hover:not(:disabled) {
+	color: var(--text-strong);
+}
+
+.closeButton:hover {
+	border-color: color-mix(in srgb, var(--border-soft) 90%, transparent);
+	background: color-mix(in srgb, var(--surface-panel-soft) 80%, transparent);
+}
+
+.closeButton:focus-visible {
+	outline: none;
+	border-color: color-mix(in srgb, var(--accent) 14%, var(--border-soft));
+	background: color-mix(in srgb, var(--surface-panel-soft) 88%, transparent);
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.closeIcon {
+	width: 0.94rem;
+	height: 0.94rem;
+}
+
+.sectionLabel,
+.groupTitle {
+	font-family: var(--font-label);
+	font-size: 0.72rem;
+	letter-spacing: 0.02em;
+	color: var(--text-muted);
+}
+
+.section,
+.previewSection {
+	gap: 0.48rem;
+	min-width: 0;
+}
+
+.destinationSection {
+	min-height: 0;
+	gap: 0.52rem;
+}
+
+.previewCard {
+	display: flex;
+	flex-direction: column;
+	gap: 0.22rem;
+	padding: 0.5rem 0.62rem 0.54rem;
+	border: 1px solid color-mix(in srgb, var(--border-soft) 94%, transparent);
+	border-radius: 0.78rem;
+	background: color-mix(in srgb, var(--surface-panel-soft) 88%, var(--surface-field));
+}
+
+.previewMeta {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 0.16rem 0.32rem;
+	min-width: 0;
+	color: var(--text-muted);
+	font-size: 0.74rem;
+	line-height: 1.3;
+}
+
+.previewAuthor {
+	color: var(--text-strong);
+	font-weight: 600;
+}
+
+.previewSeparator {
+	color: var(--text-faint);
+}
+
+.previewBody {
+	margin: 0;
+	display: -webkit-box;
+	overflow: hidden;
+	color: var(--text-soft);
+	font-size: 0.79rem;
+	line-height: 1.45;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 1;
+}
+
+.noteSection {
+	min-width: 0;
+}
+
+.searchField {
+	display: flex;
+	align-items: center;
+	padding: 0.56rem 0.68rem;
+	border: 1px solid color-mix(in srgb, var(--border-soft) 92%, transparent);
+	border-radius: 0.76rem;
+	background: var(--surface-field);
+	transition:
+		border-color 140ms ease,
+		background 140ms ease,
+		box-shadow 140ms ease;
+}
+
+.searchField:focus-within {
+	border-color: color-mix(in srgb, var(--accent) 14%, var(--border-strong));
+	background: color-mix(in srgb, var(--surface-panel-muted) 94%, var(--surface-field));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.searchInput,
+.noteField {
+	width: 100%;
+	border: 0;
+	background: transparent;
+	color: var(--text-strong);
+	font: inherit;
+}
+
+.searchInput::placeholder,
+.noteField::placeholder {
+	color: var(--text-faint);
+}
+
+.searchInput:focus,
+.noteField:focus {
+	outline: none;
+}
+
+.roomList {
+	display: flex;
+	flex-direction: column;
+	flex: 1 1 auto;
+	gap: 0.68rem;
+	min-height: 0;
+	padding-right: 0.16rem;
+	overflow-y: auto;
+	scrollbar-gutter: stable;
+	scrollbar-width: thin;
+	scrollbar-color: var(--forward-scrollbar-thumb) transparent;
+}
+
+.roomGroup {
+	display: flex;
+	flex-direction: column;
+	gap: 0.34rem;
+}
+
+.groupTitle {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	padding-block: 0.08rem 0.14rem;
+	background: linear-gradient(
+		to bottom,
+		color-mix(in srgb, var(--surface-panel) 96%, var(--surface-field)) 0%,
+		color-mix(in srgb, var(--surface-panel) 96%, var(--surface-field)) 82%,
+		transparent 100%
+	);
+}
+
+.roomGroupBody {
+	gap: 0.34rem;
+}
+
+.roomOption {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.68rem;
+	width: 100%;
+	min-height: 3.1rem;
+	padding: 0.58rem 0.72rem;
+	border: 1px solid color-mix(in srgb, var(--border-soft) 90%, transparent);
+	border-radius: 0.82rem;
+	background: color-mix(in srgb, var(--surface-field) 92%, var(--surface-panel));
+	color: inherit;
+	text-align: left;
+	transition:
+		background 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease;
+}
+
+.roomOption:hover {
+	border-color: color-mix(in srgb, var(--border-strong) 82%, transparent);
+	background: color-mix(in srgb, var(--surface-panel-muted) 88%, var(--surface-field));
+}
+
+.roomOption[data-active='true'] {
+	border-color: color-mix(in srgb, var(--accent) 18%, var(--border-strong));
+	background: color-mix(in srgb, var(--surface-panel-muted) 96%, var(--surface-field));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.roomOption:focus-visible {
+	outline: none;
+	border-color: color-mix(in srgb, var(--accent) 20%, var(--border-strong));
+	background: color-mix(in srgb, var(--surface-panel-muted) 98%, var(--surface-field));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.roomAvatar {
+	display: grid;
+	place-items: center;
+	width: 1.82rem;
+	height: 1.82rem;
+	border-radius: 0.58rem;
+	background: color-mix(in srgb, var(--accent) 11%, var(--surface-panel-soft));
+	border: 1px solid color-mix(in srgb, var(--border-soft) 94%, transparent);
+	font-family: var(--font-label);
+	font-size: 0.69rem;
+	font-weight: 630;
+	color: color-mix(in srgb, var(--accent-strong) 18%, var(--text-strong));
+	flex: 0 0 auto;
+}
+
+.roomCopy {
+	gap: 0.12rem;
+	min-width: 0;
+	flex: 1 1 auto;
+}
+
+.roomTitleRow {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.34rem;
+	min-width: 0;
+	flex-wrap: wrap;
+}
+
+.roomTitle {
+	color: var(--text-strong);
+	font-size: 0.83rem;
+	font-weight: 590;
+	min-width: 0;
+}
+
+.roomKindTag {
+	display: inline-flex;
+	align-items: center;
+	height: 0.96rem;
+	padding: 0 0.32rem;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--surface-panel) 94%, var(--surface-field));
+	color: var(--text-muted);
+	font-family: var(--font-label);
+	font-size: 0.62rem;
+	letter-spacing: 0.02em;
+	line-height: 1;
+}
+
+.roomPresenceDot {
+	width: 0.36rem;
+	height: 0.36rem;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--text-faint) 84%, transparent);
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-soft) 82%, transparent);
+	flex: 0 0 auto;
+	transform: translateY(0.01rem);
+}
+
+.roomPresenceDot[data-status='online'] {
+	background: color-mix(in srgb, var(--success) 78%, var(--support));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--success) 14%, var(--border-soft));
+}
+
+.roomPresenceDot[data-status='away'] {
+	background: color-mix(in srgb, var(--warning) 58%, var(--support));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning) 12%, var(--border-soft));
+}
+
+.roomPresenceDot[data-status='busy'] {
+	background: color-mix(in srgb, var(--warning) 74%, var(--accent));
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--warning) 14%, var(--border-soft));
+}
+
+.roomPresenceDot[data-status='offline'] {
+	background: color-mix(in srgb, var(--text-faint) 84%, transparent);
+	box-shadow: 0 0 0 1px color-mix(in srgb, var(--border-soft) 78%, transparent);
+}
+
+.roomSubtitle {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-soft);
+	font-size: 0.76rem;
+	line-height: 1.38;
+}
+
+.roomIndicator {
+	display: grid;
+	place-items: center;
+	width: 0.86rem;
+	height: 0.86rem;
+	border-radius: 999px;
+	border: 1px solid color-mix(in srgb, var(--border-strong) 82%, transparent);
+	background: transparent;
+	flex: 0 0 auto;
+}
+
+.roomIndicator::after {
+	content: '';
+	width: 0.34rem;
+	height: 0.34rem;
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--accent) 56%, transparent);
+	transform: scale(0.35);
+	opacity: 0;
+	transition:
+		transform 140ms ease,
+		opacity 140ms ease,
+		background 140ms ease;
+}
+
+.roomOption[data-active='true'] .roomIndicator {
+	border-color: color-mix(in srgb, var(--accent) 28%, var(--border-strong));
+	background: color-mix(in srgb, var(--accent) 16%, var(--surface-panel));
+}
+
+.roomOption[data-active='true'] .roomIndicator::after {
+	transform: scale(1);
+	opacity: 1;
+}
+
+.noteField {
+	min-height: 3.9rem;
+	max-height: 3.9rem;
+	padding: 0.62rem 0.74rem;
+	border: 1px solid color-mix(in srgb, var(--border-soft) 92%, transparent);
+	border-radius: 0.8rem;
+	background: var(--surface-field);
+	line-height: 1.5;
+	resize: none;
+	scrollbar-gutter: stable;
+	scrollbar-width: thin;
+	scrollbar-color: var(--forward-scrollbar-thumb) transparent;
+	transition:
+		border-color 140ms ease,
+		background 140ms ease,
+		box-shadow 140ms ease;
+}
+
+.noteField:focus-visible {
+	outline: none;
+	border-color: color-mix(in srgb, var(--accent) 14%, var(--border-strong));
+	background: color-mix(in srgb, var(--surface-panel-muted) 94%, var(--surface-field));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.footer {
+	align-items: center;
+	justify-content: flex-end;
+	gap: 0.8rem;
+	padding-top: 0.12rem;
+}
+
+.errorText {
+	margin: 0;
+	color: color-mix(in srgb, var(--warning) 46%, var(--text-strong));
+	font-size: 0.76rem;
+	line-height: 1.4;
+}
+
+.submitButton {
+	min-height: 2.2rem;
+	padding: 0.34rem 0.92rem;
+	border: 1px solid color-mix(in srgb, var(--accent) 18%, var(--border-strong));
+	border-radius: 0.76rem;
+	background: color-mix(in srgb, var(--surface-panel-muted) 92%, var(--surface-panel));
+	color: var(--text-strong);
+	font: inherit;
+	font-size: 0.82rem;
+	font-weight: 590;
+	transition:
+		background 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease;
+}
+
+.submitButton:disabled {
+	opacity: 0.56;
+	cursor: default;
+}
+
+.submitButton:focus-visible {
+	outline: none;
+	border-color: color-mix(in srgb, var(--accent) 20%, var(--border-strong));
+	background: color-mix(in srgb, var(--surface-panel-muted) 98%, var(--surface-panel));
+	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+@media (max-width: 760px) {
+	.panel {
+		width: calc(100vw - 1rem);
+		height: calc(100vh - 1rem);
+		max-height: calc(100vh - 1rem);
+		padding: 0.9rem;
+	}
+
+	.noteField {
+		min-height: 4.1rem;
+		max-height: 4.1rem;
+	}
+}

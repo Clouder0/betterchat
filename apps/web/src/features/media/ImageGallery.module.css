@@ -1,0 +1,202 @@
+.imageInteractive {
+	display: block;
+	max-width: 100%;
+	line-height: 0;
+	transition: transform 160ms ease;
+	vertical-align: top;
+}
+
+.imageInteractive[data-enabled='true'] {
+	cursor: zoom-in;
+}
+
+.imageInteractive:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 3px;
+}
+
+.imageInteractive[data-enabled='true']:hover {
+	transform: translateY(-1px);
+}
+
+:global(.betterchat-pswp) {
+	--pswp-bg: color-mix(in srgb, var(--bg-panel) 92%, black);
+	--pswp-preloader-color: color-mix(in srgb, var(--text-muted) 88%, transparent);
+	--pswp-placeholder-bg: transparent;
+	font-family: var(--font-ui);
+}
+
+:global(.betterchat-pswp .pswp__bg) {
+	background: var(--pswp-bg);
+}
+
+:global(.betterchat-pswp div.pswp__img--placeholder),
+:global(.betterchat-pswp .pswp__img--with-bg) {
+	background: transparent;
+}
+
+:global(.betterchat-pswp .pswp__img) {
+	border-radius: 0.94rem;
+	cursor: grab;
+}
+
+:global(.betterchat-pswp .pswp__img:active) {
+	cursor: grabbing;
+}
+
+:global(.betterchat-pswp .pswp__item),
+:global(.betterchat-pswp .pswp__zoom-wrap) {
+	cursor: pointer;
+}
+
+:global(.betterchat-pswp .pswp__top-bar) {
+	padding: 0;
+	pointer-events: none;
+}
+
+:global(.betterchat-pswp .pswp__preloader) {
+	top: 1rem;
+	right: 1rem;
+}
+
+.controlsDock {
+	position: absolute;
+	left: 0;
+	right: 0;
+	bottom: clamp(0.9rem, 2.4vh, 1.55rem);
+	display: flex;
+	justify-content: center;
+	pointer-events: none;
+	z-index: 30;
+}
+
+.controlsBar {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.32rem;
+	min-height: 3rem;
+	padding: 0.34rem 0.38rem;
+	border: 1px solid color-mix(in srgb, var(--border-soft) 84%, transparent);
+	border-radius: 999px;
+	background: color-mix(in srgb, var(--surface-panel) 88%, rgba(11, 15, 24, 0.62));
+	box-shadow: var(--shadow-panel);
+	backdrop-filter: blur(12px) saturate(1.02);
+	pointer-events: auto;
+}
+
+.controlsDock[data-single='true'] [data-action='prev'],
+.controlsDock[data-single='true'] [data-action='next'],
+.controlsDock[data-single='true'] .controlDivider {
+	display: none;
+}
+
+.controlButton {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 2.2rem;
+	height: 2.2rem;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: 999px;
+	background: transparent;
+	color: var(--text-strong);
+	cursor: pointer;
+	line-height: 0;
+	flex: 0 0 auto;
+	transition:
+		background 140ms ease,
+		border-color 140ms ease,
+		color 140ms ease;
+}
+
+.controlButton:hover {
+	background: color-mix(in srgb, var(--surface-panel-soft) 72%, transparent);
+	border-color: color-mix(in srgb, var(--border-soft) 84%, transparent);
+}
+
+.controlButton:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
+}
+
+.controlButton:disabled {
+	opacity: 0.28;
+	cursor: default;
+	transform: none;
+}
+
+.controlButton svg {
+	display: block;
+	width: 1rem;
+	height: 1rem;
+}
+
+.controlButton path {
+	stroke: currentColor;
+}
+
+.controlCounter {
+	min-width: 3rem;
+	padding: 0 0.4rem;
+	color: var(--text-muted);
+	font-family: var(--font-label);
+	font-size: 0.75rem;
+	letter-spacing: 0.02em;
+	text-align: center;
+}
+
+.controlZoom {
+	min-width: 3.4rem;
+	padding: 0 0.48rem 0 0.18rem;
+	color: var(--text-strong);
+	font-family: var(--font-label);
+	font-size: 0.75rem;
+	font-variant-numeric: tabular-nums;
+	letter-spacing: 0.01em;
+	text-align: center;
+}
+
+.controlDivider {
+	width: 1px;
+	height: 1rem;
+	margin: 0 0.12rem;
+	background: color-mix(in srgb, var(--border-soft) 80%, transparent);
+}
+
+@media (max-width: 720px) {
+	:global(.betterchat-pswp .pswp__preloader) {
+		top: 0.7rem;
+		right: 0.7rem;
+	}
+
+	.controlsDock {
+		bottom: 0.78rem;
+	}
+
+	.controlsBar {
+		gap: 0.22rem;
+		min-height: 2.7rem;
+		padding: 0.26rem 0.3rem;
+	}
+
+	.controlButton {
+		width: 2rem;
+		height: 2rem;
+	}
+
+	.controlButton svg {
+		width: 0.92rem;
+		height: 0.92rem;
+	}
+
+	.controlCounter {
+		min-width: 2.7rem;
+		font-size: 0.72rem;
+	}
+
+	.controlZoom {
+		min-width: 3.05rem;
+		font-size: 0.72rem;
+	}
+}

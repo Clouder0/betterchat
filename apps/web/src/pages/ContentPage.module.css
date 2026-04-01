@@ -1,0 +1,195 @@
+.page {
+	display: flex;
+	flex-direction: column;
+	gap: 1.9rem;
+}
+
+.heroGrid {
+	display: grid;
+	grid-template-columns: minmax(0, 1.45fr) minmax(18rem, 0.8fr);
+	gap: 1.25rem;
+}
+
+.referencePanel {
+	display: flex;
+	flex-direction: column;
+	gap: 1.2rem;
+}
+
+.panelHeader {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 1rem;
+	padding-bottom: 0.95rem;
+	border-bottom: 1px solid var(--border-soft);
+}
+
+.panelEyebrow,
+.noteEyebrow {
+	margin: 0 0 0.3rem;
+	font-family: var(--font-label);
+	font-size: 0.72rem;
+	letter-spacing: 0.02em;
+	color: var(--text-muted);
+}
+
+.panelTitle,
+.noteTitle {
+	margin: 0;
+	font-size: 1.08rem;
+	letter-spacing: -0.01em;
+}
+
+.panelTags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.55rem;
+}
+
+.noteStack {
+	display: grid;
+	gap: 1rem;
+}
+
+.notePanel {
+	display: flex;
+	flex-direction: column;
+	gap: 0.8rem;
+}
+
+.noteText {
+	margin: 0;
+	color: var(--text-soft);
+	line-height: 1.7;
+}
+
+.checkList {
+	display: grid;
+	gap: 0.7rem;
+	margin: 0;
+	padding-left: 1.15rem;
+	color: var(--text-soft);
+}
+
+.messageStack {
+	display: grid;
+	gap: 0.9rem;
+}
+
+.messageCard {
+	display: grid;
+	grid-template-columns: 2.4rem minmax(0, 1fr);
+	gap: 0.8rem;
+	padding: 1rem 1.05rem;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-panel);
+	background: var(--surface-panel);
+	box-shadow: var(--shadow-panel);
+}
+
+.avatar {
+	display: grid;
+	place-items: center;
+	width: 2.4rem;
+	height: 2.4rem;
+	border-radius: 0.78rem;
+	border: 1px solid var(--border-soft);
+	background: var(--bg-elevated);
+	font-family: var(--font-label);
+	font-size: 0.78rem;
+	font-weight: 650;
+}
+
+.avatar[data-tone='accent'] {
+	background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+}
+
+.avatar[data-tone='warning'] {
+	background: var(--alloy-soft);
+}
+
+.avatar[data-tone='success'] {
+	background: var(--support-soft);
+}
+
+.messageMain {
+	display: flex;
+	flex-direction: column;
+	gap: 0.45rem;
+	min-width: 0;
+}
+
+.messageMeta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	align-items: center;
+	font-size: 0.92rem;
+	line-height: 1.45;
+}
+
+.messageMeta strong {
+	font-weight: 620;
+}
+
+.messageMeta span,
+.messageMeta time {
+	color: var(--text-muted);
+}
+
+.scenarioGrid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 1rem;
+}
+
+.scenarioCard {
+	display: flex;
+	flex-direction: column;
+	gap: 0.9rem;
+	padding: 1rem 1.05rem;
+	border: 1px solid var(--border-strong);
+	border-radius: var(--radius-panel);
+	background: var(--surface-panel);
+	box-shadow: var(--shadow-panel);
+	min-width: 0;
+}
+
+.scenarioHeader {
+	display: grid;
+	grid-template-columns: 2.4rem minmax(0, 1fr);
+	gap: 0.8rem;
+	align-items: start;
+}
+
+.scenarioIntro {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25rem;
+	min-width: 0;
+}
+
+.scenarioTitle {
+	margin: 0;
+	font-size: 1rem;
+	line-height: 1.35;
+	letter-spacing: -0.01em;
+	color: var(--text-strong);
+}
+
+.scenarioTags {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.55rem;
+}
+
+@media (max-width: 1080px) {
+	.heroGrid {
+		grid-template-columns: 1fr;
+	}
+
+	.scenarioGrid {
+		grid-template-columns: 1fr;
+	}
+}

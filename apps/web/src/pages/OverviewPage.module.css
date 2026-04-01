@@ -1,0 +1,115 @@
+.page {
+	display: flex;
+	flex-direction: column;
+	gap: 1.9rem;
+}
+
+.heroGrid {
+	display: grid;
+	grid-template-columns: minmax(0, 1.6fr) minmax(18rem, 0.9fr);
+	gap: 1.25rem;
+}
+
+.heroPanel {
+	display: flex;
+	flex-direction: column;
+	justify-content: space-between;
+	gap: 2.25rem;
+	min-height: 18rem;
+	background:
+		linear-gradient(90deg, color-mix(in srgb, var(--accent) 34%, transparent), color-mix(in srgb, var(--support) 24%, transparent))
+			top left / 100% 0.16rem no-repeat,
+		var(--surface-panel);
+}
+
+.heroCopy {
+	display: flex;
+	flex-direction: column;
+	gap: 0.9rem;
+	max-width: 40rem;
+}
+
+.heroTitle {
+	margin: 0;
+	font-size: clamp(2.2rem, 4.2vw, 4.8rem);
+	line-height: 1.08;
+	letter-spacing: -0.03em;
+}
+
+.heroText {
+	max-width: 34rem;
+	margin: 0;
+	color: var(--text-soft);
+	font-size: 1.02rem;
+	line-height: 1.64;
+}
+
+.heroActions {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+}
+
+.reviewList {
+	display: grid;
+	gap: 0.7rem;
+	color: var(--text-soft);
+}
+
+.reviewList p {
+	margin: 0;
+	padding: 0.78rem 0 0;
+	border: 1px solid var(--border-soft);
+	border-right: 0;
+	border-bottom: 0;
+	border-left: 0;
+	background: transparent;
+}
+
+.metrics {
+	display: grid;
+	gap: 0.8rem;
+}
+
+.metricAccent {
+	border-color: color-mix(in srgb, var(--accent) 18%, var(--border-soft));
+	background: color-mix(in srgb, var(--accent-soft) 42%, var(--surface-panel-soft));
+}
+
+.metricSupport {
+	border-color: color-mix(in srgb, var(--support) 18%, var(--border-soft));
+	background: color-mix(in srgb, var(--support-soft) 42%, var(--surface-panel-soft));
+}
+
+.metricAlloy {
+	border-color: color-mix(in srgb, var(--alloy) 18%, var(--border-soft));
+	background: color-mix(in srgb, var(--alloy-soft) 55%, var(--surface-panel-soft));
+}
+
+.checkGrid {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 1.25rem;
+}
+
+.panelTitle {
+	margin: 0 0 0.85rem;
+	font-size: 1rem;
+	letter-spacing: -0.01em;
+}
+
+.list {
+	display: grid;
+	gap: 0.7rem;
+	margin: 0;
+	padding-left: 1.1rem;
+	color: var(--text-soft);
+	line-height: 1.62;
+}
+
+@media (max-width: 1080px) {
+	.heroGrid,
+	.checkGrid {
+		grid-template-columns: 1fr;
+	}
+}

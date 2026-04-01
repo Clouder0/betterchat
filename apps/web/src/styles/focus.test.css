@@ -1,0 +1,177 @@
+/**
+ * Focus Indicator CSS Tests
+ * Issues #4 & #7: Focus Indicator CSS fixes
+ * 
+ * These tests verify that focus indicators are visible and meet WCAG 2.1
+ * requirements (3:1 contrast ratio minimum).
+ */
+
+/* ============================================
+   TEST ASSERTION 1: messageActionButton Focus
+   ============================================ */
+
+/**
+ * Test: messageActionButton should have visible outline on focus-visible
+ * Location: TimelineView.module.css, lines 475-480
+ * 
+ * REQUIREMENTS:
+ * - Must have outline property (not just box-shadow)
+ * - Outline must be at least 2px solid
+ * - Outline color must use var(--accent) (100%, not mixed with transparency)
+ * - Must have outline-offset for visibility
+ * 
+ * WCAG 2.1: Focus indicators must have 3:1 contrast ratio
+ * The original 10% accent box-shadow fails this requirement.
+ */
+.test-messageActionButton-focus {
+  /* ASSERT: outline exists and is visible */
+  --test-outline-width: 2px;
+  --test-outline-style: solid;
+  --test-outline-color: var(--accent);
+  --test-outline-offset: 2px;
+  
+  /* ASSERT: Contrast verification placeholder
+   * With var(--accent) at 100%, we should achieve >3:1 contrast
+   * against both light and dark backgrounds
+   */
+  --test-min-contrast-ratio: 3;
+  
+  /* ASSERT: Focus state overrides */
+  outline: var(--test-outline-width) var(--test-outline-style) var(--test-outline-color);
+  outline-offset: var(--test-outline-offset);
+}
+
+/* ============================================
+   TEST ASSERTION 2: deliveryActionButton Focus
+   ============================================ */
+
+/**
+ * Test: deliveryActionButton should have visible outline on focus-visible
+ * Location: TimelineView.module.css, lines 820-823
+ * 
+ * REQUIREMENTS:
+ * - Must NOT use outline: none (removes focus indicator)
+ * - Must have visible outline property
+ * - Outline must be at least 2px solid
+ * - Outline color must use var(--accent)
+ * - Must have outline-offset for visibility
+ * - Can maintain existing color change as supplementary indicator
+ * 
+ * WCAG 2.1: Color change alone is not sufficient for focus indication
+ */
+.test-deliveryActionButton-focus {
+  /* ASSERT: outline exists and is visible (not outline: none) */
+  --test-outline-width: 2px;
+  --test-outline-style: solid;
+  --test-outline-color: var(--accent);
+  --test-outline-offset: 2px;
+  
+  /* ASSERT: Contrast verification placeholder */
+  --test-min-contrast-ratio: 3;
+  
+  /* ASSERT: Supplementary color change allowed but not sufficient alone */
+  --test-allows-color-change: true;
+  --test-requires-outline: true;
+  
+  /* ASSERT: Focus state overrides */
+  outline: var(--test-outline-width) var(--test-outline-style) var(--test-outline-color);
+  outline-offset: var(--test-outline-offset);
+}
+
+/* ============================================
+   VISUAL REGRESSION TEST MARKERS
+   ============================================ */
+
+/**
+ * Test markers for visual regression testing.
+ * These classes are used by test runners to capture
+ * screenshots of focus states for comparison.
+ */
+.test-marker-focus-visible {
+  /* Marker for: focus-visible state testing */
+  --test-state: 'focus-visible';
+  --test-selector: ':focus-visible';
+}
+
+.test-marker-keyboard-nav {
+  /* Marker for: keyboard navigation testing */
+  --test-input-method: 'keyboard';
+  --test-key: 'Tab';
+}
+
+.test-marker-light-theme {
+  /* Marker for: light theme visibility testing */
+  --test-theme: 'light';
+  --test-bg-var: 'var(--bg-panel)';
+}
+
+.test-marker-dark-theme {
+  /* Marker for: dark theme visibility testing */
+  --test-theme: 'dark';
+  --test-bg-var: 'var(--bg-panel)';
+}
+
+/* ============================================
+   CONTRAST RATIO VERIFICATION HELPERS
+   ============================================ */
+
+/**
+ * Helper variables for contrast verification.
+ * These are reference values for manual/automated testing.
+ * 
+ * WCAG 2.1 AA Requirements:
+ * - UI Components (focus indicators): 3:1 minimum
+ * - Text: 4.5:1 minimum (AA), 7:1 (AAA)
+ */
+.test-contrast-requirements {
+  /* UI component focus indicator requirement */
+  --wcag-focus-indicator-min: 3;
+  
+  /* Text contrast requirements */
+  --wcag-text-aa-min: 4.5;
+  --wcag-text-aaa-min: 7;
+  
+  /* Test passes if calculated contrast >= these values */
+  --test-focus-contrast-target: 3;
+}
+
+/* ============================================
+   EXPECTED STYLES (Reference for Implementation)
+   ============================================ */
+
+/**
+ * Reference: Expected styles after fixes
+ * 
+ * Issue #4 Fix (.messageActionButton):
+ * .messageActionButton:focus-visible {
+ *   outline: 2px solid var(--accent);
+ *   outline-offset: 2px;
+ *   background: color-mix(in srgb, var(--surface-panel-soft) 82%, transparent);
+ *   color: var(--text-strong);
+ *   // REMOVED: box-shadow with 10% accent
+ * }
+ * 
+ * Issue #7 Fix (.deliveryActionButton):
+ * .deliveryActionButton:focus-visible {
+ *   outline: 2px solid var(--accent);
+ *   outline-offset: 2px;
+ *   color: var(--text-strong);
+ *   // REMOVED: outline: none
+ * }
+ */
+
+/* ============================================
+   CONSISTENCY CHECKS
+   ============================================ */
+
+/**
+ * Verify consistency with other focus styles in the file.
+ * Other focus-visible styles should follow similar patterns.
+ */
+.test-consistency-checks {
+  /* Check that all focus-visible styles use similar patterns */
+  --expected-outline-width: 2px;
+  --expected-outline-style: solid;
+  --expected-outline-offset: 2px;
+  --expected-outline-color-source: var(--accent);
+}

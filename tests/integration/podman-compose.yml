@@ -1,0 +1,45 @@
+services:
+  mongo:
+    image: docker.io/library/mongo:7.0
+    network_mode: host
+    command:
+      - mongod
+      - --bind_ip_all
+      - --port
+      - "37017"
+      - --replSet
+      - rs0
+
+  rocketchat:
+    image: docker.io/rocketchat/rocket.chat:7.6.0
+    network_mode: host
+    depends_on:
+      - mongo
+    environment:
+      PORT: 3100
+      ROOT_URL: http://127.0.0.1:3100
+      MONGO_URL: mongodb://127.0.0.1:37017/rocketchat?replicaSet=rs0
+      MONGO_OPLOG_URL: mongodb://127.0.0.1:37017/local?replicaSet=rs0
+      TEST_MODE: 'true'
+      ROCKETCHAT_LICENSE: ${BETTERCHAT_TEST_ROCKETCHAT_LICENSE}
+      ADMIN_USERNAME: admin
+      ADMIN_PASS: 'AdminPass123!'
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_EMAIL_VERIFIED: 'true'
+
+  betterchat-backend:
+    build:
+      context: ../..
+      dockerfile: apps/backend/Dockerfile
+    network_mode: host
+    depends_on:
+      - rocketchat
+    environment:
+      BETTERCHAT_HOST: 0.0.0.0
+      BETTERCHAT_PORT: 3200
+      BETTERCHAT_UPSTREAM_URL: http://127.0.0.1:3100
+      BETTERCHAT_SESSION_COOKIE_NAME: betterchat_session
+      BETTERCHAT_SESSION_COOKIE_SECURE: 'false'
+      BETTERCHAT_SESSION_SECRET: ${BETTERCHAT_TEST_SESSION_SECRET:-betterchat-integration-session-secret}
+      BETTERCHAT_SESSION_TTL_SECONDS: '604800'
+      BETTERCHAT_DEFAULT_MESSAGE_PAGE_SIZE: 50
