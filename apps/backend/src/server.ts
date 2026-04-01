@@ -5,26 +5,24 @@ import { createSnapshotService } from './snapshot-service';
 import { BetterChatConversationStreamGateway, type ConversationStreamSocketData } from './stream';
 import { RocketChatClient } from './upstream';
 
-const config = getConfig();
-const logger = consoleLogger;
-const client = new RocketChatClient(config.upstreamUrl, {
-  requestTimeoutMs: config.upstreamRequestTimeoutMs,
-  mediaTimeoutMs: config.upstreamMediaTimeoutMs,
-});
-const snapshotService = createSnapshotService(config, client);
-const app = createApp(config, {
-  client,
-  logger,
-  snapshotService,
-});
-const streamGateway = new BetterChatConversationStreamGateway(config, {
-  client,
-  snapshotService,
-});
+export const startServer = (): void => {
+  const config = getConfig();
+  const logger = consoleLogger;
+  const client = new RocketChatClient(config.upstreamUrl, {
+    requestTimeoutMs: config.upstreamRequestTimeoutMs,
+    mediaTimeoutMs: config.upstreamMediaTimeoutMs,
+  });
+  const snapshotService = createSnapshotService(config, client);
+  const app = createApp(config, {
+    client,
+    logger,
+    snapshotService,
+  });
+  const streamGateway = new BetterChatConversationStreamGateway(config, {
+    client,
+    snapshotService,
+  });
 
-export default app;
-
-if (import.meta.main) {
   const server = Bun.serve({
     hostname: config.host,
     port: config.port,
@@ -74,4 +72,8 @@ if (import.meta.main) {
 
   process.once('SIGINT', () => shutdown('SIGINT'));
   process.once('SIGTERM', () => shutdown('SIGTERM'));
+};
+
+if (import.meta.main) {
+  startServer();
 }

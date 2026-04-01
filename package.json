@@ -1,5 +1,6 @@
 {
   "name": "betterchat",
+  "version": "0.1.0",
   "packageManager": "bun@1.3.6",
   "private": true,
   "scripts": {
@@ -11,7 +12,9 @@
     "typecheck:contracts": "bun --filter @betterchat/contracts typecheck",
     "typecheck:backend": "bun --filter @betterchat/backend typecheck",
     "typecheck:test-utils": "bun --filter @betterchat/test-utils typecheck",
-    "typecheck": "bun run typecheck:web && bun run typecheck:contracts && bun run typecheck:backend && bun run typecheck:test-utils"
+    "typecheck": "bun run typecheck:web && bun run typecheck:contracts && bun run typecheck:backend && bun run typecheck:test-utils",
+    "build:dist": "bun run scripts/build-dist.ts",
+    "build": "bun run build:dist"
   },
   "workspaces": [
     "apps/*",

@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { serveStatic } from 'hono/bun';
 
 import type { BetterChatConfig } from './config';
 import { getConfig } from './config';
@@ -70,13 +71,25 @@ export const createApp = (
     return response;
   });
 
-  app.notFound((c) => jsonError(c, new AppError('NOT_FOUND', 'Route not found', 404, { path: c.req.path })));
-
   installOperationalRoutes(app, services);
   installSessionRoutes(app, services);
   installUserRoutes(app, services);
   installConversationRoutes(app, services);
   installMediaRoutes(app, services);
+
+  if (config.staticDir) {
+    app.use('*', serveStatic({ root: config.staticDir }));
+
+    app.notFound(async (c) => {
+      if (c.req.path.startsWith('/api/')) {
+        return jsonError(c, new AppError('NOT_FOUND', 'Route not found', 404, { path: c.req.path }));
+      }
+      const file = Bun.file(`${config.staticDir}/index.html`);
+      return new Response(file, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+    });
+  } else {
+    app.notFound((c) => jsonError(c, new AppError('NOT_FOUND', 'Route not found', 404, { path: c.req.path })));
+  }
 
   return app;
 };

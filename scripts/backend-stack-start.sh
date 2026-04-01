@@ -6,11 +6,13 @@ source "$SCRIPT_DIR/backend-harness-common.sh"
 COMPOSE_FILE="$ROOT_DIR/tests/integration/podman-compose.yml"
 
 compose() {
-  podman compose -f "$COMPOSE_FILE" "$@"
+  bash "$SCRIPT_DIR/compose.sh" -f "$COMPOSE_FILE" "$@"
 }
 
 ensure_podman_socket() {
-  systemctl --user start podman.socket
+  if command -v podman &>/dev/null; then
+    systemctl --user start podman.socket 2>/dev/null || true
+  fi
 }
 
 wait_for_mongo() {

@@ -10,6 +10,7 @@ export type BetterChatConfig = {
   sessionTtlSeconds: number;
   defaultMessagePageSize: number;
   maxUploadBytes: number;
+  staticDir: string | null;
 };
 
 const DEFAULT_HOST = '0.0.0.0';
@@ -113,5 +114,6 @@ export const getConfig = (env: NodeJS.ProcessEnv = process.env): BetterChatConfi
       'BETTERCHAT_DEFAULT_MESSAGE_PAGE_SIZE',
     ),
     maxUploadBytes: parsePositiveInteger(env.BETTERCHAT_MAX_UPLOAD_BYTES, DEFAULT_MAX_UPLOAD_BYTES, 'BETTERCHAT_MAX_UPLOAD_BYTES'),
+    staticDir: env.BETTERCHAT_STATIC_DIR?.trim() || null,
   };
 };

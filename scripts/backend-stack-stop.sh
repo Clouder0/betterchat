@@ -8,5 +8,7 @@ TEST_LICENSE_FILE="$ROOT_DIR/tests/integration/fixtures/rocketchat-test-license.
 
 export BETTERCHAT_TEST_ROCKETCHAT_LICENSE="${BETTERCHAT_TEST_ROCKETCHAT_LICENSE:-$(tr -d '\n' < "$TEST_LICENSE_FILE")}"
 
-systemctl --user start podman.socket
-podman compose -f "$COMPOSE_FILE" down -v --remove-orphans
+if command -v podman &>/dev/null; then
+  systemctl --user start podman.socket 2>/dev/null || true
+fi
+bash "$SCRIPT_DIR/compose.sh" -f "$COMPOSE_FILE" down -v --remove-orphans

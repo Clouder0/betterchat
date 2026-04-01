@@ -19,6 +19,7 @@ const testConfig: BetterChatConfig = {
   sessionTtlSeconds: 3600,
   defaultMessagePageSize: 50,
   maxUploadBytes: 10 * 1024 * 1024,
+  staticDir: null,
 };
 
 const testSession: UpstreamSession = {

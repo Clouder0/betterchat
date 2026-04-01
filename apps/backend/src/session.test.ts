@@ -15,6 +15,7 @@ const config: BetterChatConfig = {
   sessionTtlSeconds: 60,
   defaultMessagePageSize: 50,
   maxUploadBytes: 10 * 1024 * 1024,
+  staticDir: null,
 };
 
 describe('session cookie helpers', () => {

@@ -24,6 +24,7 @@ const testConfig: BetterChatConfig = {
   sessionTtlSeconds: 60 * 60,
   defaultMessagePageSize: 50,
   maxUploadBytes: 10 * 1024 * 1024,
+  staticDir: null,
 };
 
 const silentLogger: BetterChatLogger = {
