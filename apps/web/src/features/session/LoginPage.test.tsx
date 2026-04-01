@@ -119,7 +119,7 @@ describe('LoginPage ARIA Accessibility - Issue #8', () => {
 
     const { container } = renderWithQueryClient(<LoginPage />);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     const html = container.innerHTML;
 
@@ -137,7 +137,7 @@ describe('LoginPage ARIA Accessibility - Issue #8', () => {
 
     const { container } = renderWithQueryClient(<LoginPage />);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     const html = container.innerHTML;
 
@@ -156,7 +156,7 @@ describe('LoginPage ARIA Accessibility - Issue #8', () => {
 
     const { container } = renderWithQueryClient(<LoginPage />);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     const html = container.innerHTML;
 
@@ -175,7 +175,7 @@ describe('LoginPage ARIA Accessibility - Issue #8', () => {
 
     const { container } = renderWithQueryClient(<LoginPage />);
 
-    await new Promise(resolve => setTimeout(resolve, 50));
+    await new Promise(resolve => setTimeout(resolve, 200));
 
     const html = container.innerHTML;
 
