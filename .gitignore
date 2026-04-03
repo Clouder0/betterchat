@@ -8,6 +8,9 @@ memory/
 plans/
 handoffs/
 .claude/
+.codex
+.runtime/
+*-this-session-is-being-continued-from-a-previous-c.txt
 *.env.local
 .env
 tests/integration/fixtures/rocketchat-test-license.txt

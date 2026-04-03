@@ -1,5 +1,5 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import type { ConversationTimelineSnapshot, DirectorySnapshot } from '@betterchat/contracts';
+import type { ConversationTimelineSnapshot, CreateConversationMessageResponse, DirectorySnapshot } from '@betterchat/contracts';
 
 import {
 	betterChatGetJson,
@@ -158,6 +158,92 @@ const installNotificationRecorder = async (page: Page) => {
 	});
 };
 
+const installRealtimeWatchCommandRecorder = async (page: Page) => {
+	await page.addInitScript(() => {
+		const recordedCommands: Array<{
+			type: string;
+			conversationId?: string;
+			conversationVersion?: string;
+			directoryVersion?: string;
+			timelineVersion?: string;
+		}> = [];
+		const originalSend = WebSocket.prototype.send;
+
+		WebSocket.prototype.send = function patchedSend(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+			if (typeof data === 'string') {
+				try {
+					const parsed = JSON.parse(data) as {
+						type?: string;
+						conversationId?: string;
+						conversationVersion?: string;
+						directoryVersion?: string;
+						timelineVersion?: string;
+					};
+					if (parsed.type === 'watch-directory' || parsed.type === 'watch-conversation') {
+						recordedCommands.push(parsed as {
+							type: string;
+							conversationId?: string;
+							conversationVersion?: string;
+							directoryVersion?: string;
+							timelineVersion?: string;
+						});
+					}
+				} catch {
+					// Ignore non-JSON websocket payloads.
+				}
+			}
+
+			return originalSend.call(this, data);
+		};
+
+		(
+			window as Window & {
+				__betterchatClearRealtimeWatchCommands?: () => void;
+				__betterchatRealtimeWatchCommands?: Array<{
+					type: string;
+					conversationId?: string;
+					conversationVersion?: string;
+					directoryVersion?: string;
+					timelineVersion?: string;
+				}>;
+			}
+		).__betterchatRealtimeWatchCommands = recordedCommands;
+		(
+			window as Window & {
+				__betterchatClearRealtimeWatchCommands?: () => void;
+			}
+		).__betterchatClearRealtimeWatchCommands = () => {
+			recordedCommands.splice(0, recordedCommands.length);
+		};
+	});
+};
+
+const clearRecordedRealtimeWatchCommands = (page: Page) =>
+	page.evaluate(() => {
+		(
+			window as Window & {
+				__betterchatClearRealtimeWatchCommands?: () => void;
+			}
+		).__betterchatClearRealtimeWatchCommands?.();
+	});
+
+const readRecordedRealtimeWatchCommands = (page: Page) =>
+	page.evaluate(() => {
+		const commands =
+			(
+				window as Window & {
+					__betterchatRealtimeWatchCommands?: Array<{
+						type: string;
+						conversationId?: string;
+						conversationVersion?: string;
+						directoryVersion?: string;
+						timelineVersion?: string;
+					}>;
+				}
+			).__betterchatRealtimeWatchCommands ?? [];
+		return [...commands];
+	});
+
 const readRecordedNotifications = (page: Page) =>
 	page.evaluate(() => {
 		const recorded =
@@ -228,6 +314,115 @@ const resolveDirectoryAttention = (entry: DirectorySnapshot['entries'][number] |
 };
 
 test.describe('api integration', () => {
+	test('does not replay watch commands after realtime updates advance cached versions', async ({ page }) => {
+		const manifest = readSeedManifest();
+		const room = manifest.rooms.publicEmpty;
+		const senderSession = await createBetterChatSession({
+			login: 'bob',
+			password: 'BobPass123!',
+		});
+		await installRealtimeWatchCommandRecorder(page);
+		await loginAsApiUser(page, {
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		await openRoom(page, room.roomId);
+		await waitForRoomLoadingToFinish(page);
+		await page.waitForTimeout(250);
+		await clearRecordedRealtimeWatchCommands(page);
+
+		const probeText = `[betterchat][e2e] realtime watch replay ${Date.now()}`;
+		const sent = await betterChatPostJson<CreateConversationMessageResponse>(
+			senderSession,
+			`/api/conversations/${room.roomId}/messages`,
+			conversationMessageBody({ text: probeText }),
+		);
+		const messageId = sent.message.id;
+		if (!messageId) {
+			throw new Error('Expected BetterChat send response to include a canonical message id.');
+		}
+
+		await expect(page.getByTestId(`timeline-message-${messageId}`)).toContainText(probeText);
+		await page.waitForTimeout(250);
+
+		expect(await readRecordedRealtimeWatchCommands(page)).toEqual([]);
+	});
+
+	test('keeps a text send on a single visible row while canonical polling catches up before the send response resolves', async ({ page }) => {
+		const manifest = readSeedManifest();
+		const room = manifest.rooms.publicEmpty;
+		const text = `[betterchat][e2e] submission reconciliation ${Date.now()}`;
+		const aliceSession = await createBetterChatSession({
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		let capturedSubmissionId: string | null = null;
+		let releaseSendResponse: (() => void) | null = null;
+		let markResponseFetched: (() => void) | null = null;
+		const releaseSendResponsePromise = new Promise<void>((resolve) => {
+			releaseSendResponse = resolve;
+		});
+		const responseFetchedPromise = new Promise<void>((resolve) => {
+			markResponseFetched = resolve;
+		});
+
+		await page.route(new RegExp(`/api/conversations/${room.roomId}/messages$`), async (route) => {
+			if (route.request().method() !== 'POST') {
+				await route.continue();
+				return;
+			}
+
+			const payload = JSON.parse(route.request().postData() ?? '{}') as {
+				content?: {
+					text?: string;
+				};
+				submissionId?: string;
+			};
+			capturedSubmissionId = typeof payload.submissionId === 'string' ? payload.submissionId : null;
+
+			const response = await route.fetch();
+			markResponseFetched?.();
+			await releaseSendResponsePromise;
+			await route.fulfill({ response });
+		});
+
+		await loginAsApiUser(page, {
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		await openRoom(page, room.roomId);
+		await waitForRoomLoadingToFinish(page);
+		await scrollTimelineToBottom(page);
+
+		await page.getByTestId('composer-textarea').fill(text);
+		await page.getByTestId('composer-send').click();
+
+		await expect.poll(() => capturedSubmissionId).toBeTruthy();
+		await responseFetchedPromise;
+		const submissionId = capturedSubmissionId!;
+
+		await expect.poll(async () => {
+			const timeline = await betterChatGetJson<ConversationTimelineSnapshot>(
+				aliceSession,
+				`/api/conversations/${room.roomId}/timeline`,
+			);
+			return timeline.messages.some((message) => message.id === submissionId && message.content.text === text);
+		}).toBe(true);
+
+		const matchingRows = page.locator('article[data-message-id]').filter({ hasText: text });
+		await expect(matchingRows).toHaveCount(1);
+		await expect(page.getByTestId(`timeline-message-${submissionId}`)).toHaveAttribute('data-delivery-state', 'sending');
+		await page.waitForTimeout(1_200);
+		await expect(matchingRows).toHaveCount(1);
+
+		releaseSendResponse?.();
+
+		const deliveredRow = page.getByTestId(`timeline-message-${submissionId}`);
+		await expect(deliveredRow).toContainText(text);
+		await expect(deliveredRow).toHaveAttribute('data-delivery-state', 'sent');
+		await expect(page.locator('article[data-message-id]').filter({ hasText: text })).toHaveCount(1);
+	});
+
 	test('opens an existing direct conversation from a live timeline author quick panel', async ({ page }) => {
 		const manifest = readSeedManifest();
 		const sourceRoom = manifest.rooms.publicEmpty;

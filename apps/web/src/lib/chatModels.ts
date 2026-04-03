@@ -79,6 +79,7 @@ export type TimelineReaction = {
 
 export type TimelineMessage = {
 	id: string;
+	submissionId?: string;
 	roomId: string;
 	createdAt: string;
 	updatedAt?: string;
@@ -103,6 +104,10 @@ export type TimelineMessage = {
 	};
 	attachments?: TimelineAttachment[];
 	reactions?: TimelineReaction[];
+	actions?: {
+		edit: boolean;
+		delete: boolean;
+	};
 };
 
 export type RoomTimelineSnapshot = {
@@ -124,6 +129,7 @@ export type MessageContextSnapshot = {
 };
 
 export type SendMessageRequest = {
+	submissionId?: string;
 	text: string;
 	replyToMessageId?: string;
 };
@@ -191,6 +197,21 @@ export type DirectConversationLookupResult = {
 				state: RoomVisibility;
 				roomId: string;
 		  };
+};
+
+export type EditMessageRequest = {
+	text: string;
+	replyToMessageId?: string | null;
+};
+
+export type EditMessageResponse = {
+	message: TimelineMessage;
+	sync: SnapshotSyncState;
+};
+
+export type DeleteMessageResponse = {
+	messageId: string;
+	sync: SnapshotSyncState;
 };
 
 export type EnsureDirectConversationResult = {

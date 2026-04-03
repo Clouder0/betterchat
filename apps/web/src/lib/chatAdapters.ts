@@ -7,6 +7,7 @@ import type {
 	ConversationTimelineSnapshot,
 	CreateConversationMessageRequest,
 	CreateConversationMessageResponse,
+	DeleteMessageResponse as ContractDeleteMessageResponse,
 	DirectoryEntry,
 	DirectorySnapshot,
 	DirectConversationLookup as ContractDirectConversationLookup,
@@ -15,12 +16,15 @@ import type {
 	MembershipInbox,
 	MembershipListing,
 	SnapshotSyncState as ContractSnapshotSyncState,
+	UpdateMessageResponse as ContractUpdateMessageResponse,
 	UserSummary,
 } from '@betterchat/contracts';
 
 import type {
 	ChatUserSummary,
+	DeleteMessageResponse,
 	DirectConversationLookupResult,
+	EditMessageResponse,
 	EnsureDirectConversationResult,
 	MessageContextSnapshot,
 	RoomAttention,
@@ -114,6 +118,7 @@ const toTimelineAttachment = (attachment: ConversationAttachment): TimelineAttac
 
 export const toTimelineMessage = (message: ConversationMessage): TimelineMessage => ({
 	id: message.id,
+	...(message.submissionId ? { submissionId: message.submissionId } : {}),
 	roomId: message.conversationId,
 	createdAt: message.authoredAt,
 	updatedAt: message.updatedAt,
@@ -147,6 +152,7 @@ export const toTimelineMessage = (message: ConversationMessage): TimelineMessage
 		: undefined,
 	attachments: message.attachments?.map(toTimelineAttachment),
 	reactions: message.reactions,
+	actions: message.actions ? { edit: message.actions.edit, delete: message.actions.delete } : undefined,
 });
 
 export const toRoomSummary = (entry: DirectoryEntry): RoomSummary => ({
@@ -215,7 +221,18 @@ export const toSendMessageResponse = (response: CreateConversationMessageRespons
 	message: toTimelineMessage(response.message),
 });
 
+export const toEditMessageResponse = (response: ContractUpdateMessageResponse): EditMessageResponse => ({
+	message: toTimelineMessage(response.message),
+	sync: toContractSyncState(response.sync),
+});
+
+export const toDeleteMessageResponse = (response: ContractDeleteMessageResponse): DeleteMessageResponse => ({
+	messageId: response.messageId,
+	sync: toContractSyncState(response.sync),
+});
+
 export const toCreateConversationMessageRequest = (request: SendMessageRequest): CreateConversationMessageRequest => ({
+	...(request.submissionId ? { submissionId: request.submissionId } : {}),
 	target: {
 		kind: 'conversation',
 		...(request.replyToMessageId ? { replyToMessageId: request.replyToMessageId } : {}),

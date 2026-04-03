@@ -77,6 +77,7 @@ type PendingMethodCall = {
 };
 
 type UpstreamRealtimeInvalidateOptions = {
+  conversationId?: string;
   forceResync?: boolean;
 };
 
@@ -712,18 +713,20 @@ export class UpstreamRealtimeBridge {
     }
 
     if (eventName.endsWith('/subscriptions-changed')) {
-      this.callbacks.onSidebarChanged();
       const [action, subscription] = args;
       const roomId = subscription && typeof subscription === 'object' && 'rid' in subscription && typeof subscription.rid === 'string'
         ? subscription.rid
         : undefined;
 
       if (action === 'removed' && !roomId) {
+        this.callbacks.onSidebarChanged();
         for (const watchedRoomId of this.watchedRoomIds) {
           this.callbacks.onRoomChanged(watchedRoomId, 'room-state-changed');
         }
         return;
       }
+
+      this.callbacks.onSidebarChanged(roomId ? { conversationId: roomId } : undefined);
 
       if (roomId && this.watchedRoomIds.has(roomId)) {
         this.callbacks.onRoomChanged(roomId, 'room-state-changed');
@@ -733,9 +736,9 @@ export class UpstreamRealtimeBridge {
     }
 
     if (eventName.endsWith('/rooms-changed')) {
-      this.callbacks.onSidebarChanged();
       const [, room] = args;
       const roomId = room && typeof room === 'object' && '_id' in room && typeof room._id === 'string' ? room._id : undefined;
+      this.callbacks.onSidebarChanged(roomId ? { conversationId: roomId } : undefined);
 
       if (roomId && this.watchedRoomIds.has(roomId)) {
         this.callbacks.onRoomChanged(roomId, 'room-state-changed');

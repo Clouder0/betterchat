@@ -290,12 +290,14 @@ export type UpstreamSyncMessagesResponse = {
 };
 
 export type UpstreamSendRoomMessageInput = {
+  messageId?: string;
   roomId: string;
   text: string;
   quoteMessageLink?: string;
 };
 
 export type UpstreamSendThreadMessageInput = {
+  messageId?: string;
   roomId: string;
   threadId: string;
   text: string;
@@ -361,11 +363,13 @@ type FormRequestOptions = Omit<JsonRequestOptions, 'body'> & {
 };
 
 type RocketChatClientOptions = {
+  metadataCacheTtlMs?: number;
   mediaTimeoutMs?: number;
   requestTimeoutMs?: number;
 };
 
 const SUPPORTED_DDP_VERSIONS = ['1', 'pre2', 'pre1'] as const;
+const DEFAULT_METADATA_CACHE_TTL_MS = 1_000;
 
 const withAuthHeaders = (headers: Headers, auth: UpstreamSession | undefined): Headers => {
   if (auth) {
@@ -481,6 +485,8 @@ const requireSuccessfulPayload = <T>(payload: ParsedResponsePayload, details: Re
 };
 
 export class RocketChatClient {
+  private readonly metadataCache = new Map<string, { expiresAtMs: number; promise: Promise<unknown> }>();
+
   constructor(
     private readonly upstreamUrl: string,
     private readonly options: RocketChatClientOptions = {},
@@ -499,6 +505,46 @@ export class RocketChatClient {
 
   private createUrl(path: string): URL {
     return new URL(path, this.upstreamUrl);
+  }
+
+  private metadataCacheTtlMs(): number {
+    return this.options.metadataCacheTtlMs ?? DEFAULT_METADATA_CACHE_TTL_MS;
+  }
+
+  private pruneExpiredMetadataCache(now = Date.now()): void {
+    for (const [key, entry] of this.metadataCache.entries()) {
+      if (entry.expiresAtMs <= now) {
+        this.metadataCache.delete(key);
+      }
+    }
+  }
+
+  private getCachedMetadata<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const ttlMs = this.metadataCacheTtlMs();
+    if (ttlMs <= 0) {
+      return load();
+    }
+
+    const now = Date.now();
+    this.pruneExpiredMetadataCache(now);
+    const cached = this.metadataCache.get(key);
+    if (cached && cached.expiresAtMs > now) {
+      return cached.promise as Promise<T>;
+    }
+
+    const promise = load().catch((error) => {
+      const current = this.metadataCache.get(key);
+      if (current?.promise === promise) {
+        this.metadataCache.delete(key);
+      }
+      throw error;
+    });
+
+    this.metadataCache.set(key, {
+      expiresAtMs: now + ttlMs,
+      promise,
+    });
+    return promise;
   }
 
   private async fetchWithTimeout(
@@ -734,8 +780,12 @@ export class RocketChatClient {
   }
 
   getPublicSettings(settingIds: string[]): Promise<UpstreamSettingsResponse> {
-    const query = new URLSearchParams({ _id: settingIds.join(',') }).toString();
-    return this.requestJson({ path: `/api/v1/settings.public?${query}` });
+    const normalizedSettingIds = [...new Set(settingIds)].sort();
+    const query = new URLSearchParams({ _id: normalizedSettingIds.join(',') }).toString();
+    return this.getCachedMetadata(
+      `public-settings:${normalizedSettingIds.join(',')}`,
+      () => this.requestJson({ path: `/api/v1/settings.public?${query}` }),
+    );
   }
 
   getOauthSettings(): Promise<UpstreamOauthResponse> {
@@ -767,16 +817,22 @@ export class RocketChatClient {
   }
 
   getMe(session: UpstreamSession): Promise<UpstreamMeResponse> {
-    return this.requestJson({ path: '/api/v1/me', auth: session, rejectCode: 'UNAUTHENTICATED', rejectStatus: 401 });
+    return this.getCachedMetadata(
+      `user:${session.userId}:me`,
+      () => this.requestJson({ path: '/api/v1/me', auth: session, rejectCode: 'UNAUTHENTICATED', rejectStatus: 401 }),
+    );
   }
 
   getPermissionDefinitions(session: UpstreamSession): Promise<UpstreamPermissionsResponse> {
-    return this.requestJson({
-      path: '/api/v1/permissions.listAll',
-      auth: session,
-      rejectCode: 'UNAUTHENTICATED',
-      rejectStatus: 401,
-    });
+    return this.getCachedMetadata(
+      'global:permissions',
+      () => this.requestJson({
+        path: '/api/v1/permissions.listAll',
+        auth: session,
+        rejectCode: 'UNAUTHENTICATED',
+        rejectStatus: 401,
+      }),
+    );
   }
 
   getUserInfo(session: UpstreamSession, userId: string): Promise<UpstreamUserInfoResponse> {
@@ -1011,6 +1067,7 @@ export class RocketChatClient {
       auth: session,
       body: {
         message: {
+          ...(input.messageId ? { _id: input.messageId } : {}),
           rid: input.roomId,
           msg,
         },
@@ -1027,6 +1084,7 @@ export class RocketChatClient {
       auth: session,
       body: {
         message: {
+          ...(input.messageId ? { _id: input.messageId } : {}),
           rid: input.roomId,
           msg: input.text,
           tmid: input.threadId,

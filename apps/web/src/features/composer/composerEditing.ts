@@ -136,3 +136,133 @@ export const createComposerEnterEdit = ({
 
 	return null;
 };
+
+const listLinePattern = /^(\s*)([-*+]|\d+\.)\s/;
+const INDENT = '  ';
+
+const getSelectedLines = (value: string, selection: ComposerSelection, lineBreak: string) => {
+	const normalized = normalizeSelection(selection, value.length);
+	const firstLineStart = findLineStart(value, normalized.anchor, lineBreak);
+	const lastLineEnd = findLineEnd(value, normalized.head, lineBreak);
+	const block = value.slice(firstLineStart, lastLineEnd);
+	return { firstLineStart, lastLineEnd, lines: block.split(lineBreak) };
+};
+
+export const createComposerListIndentEdit = ({
+	lineBreak = '\n',
+	selection,
+	value,
+}: {
+	lineBreak?: string;
+	selection: ComposerSelection;
+	value: string;
+}): ComposerEdit | null => {
+	const normalized = normalizeSelection(selection, value.length);
+	const { firstLineStart, lastLineEnd, lines } = getSelectedLines(value, normalized, lineBreak);
+
+	let totalAdded = 0;
+	let anyIndented = false;
+	const newLines = lines.map((line) => {
+		if (listLinePattern.test(line)) {
+			anyIndented = true;
+			totalAdded += INDENT.length;
+			return INDENT + line;
+		}
+		return line;
+	});
+
+	if (!anyIndented) {
+		return null;
+	}
+
+	// Compute how much was added before anchor / head positions
+	let addedBeforeAnchor = 0;
+	let addedBeforeHead = 0;
+	let offset = firstLineStart;
+	for (const line of lines) {
+		const lineEnd = offset + line.length;
+		const isListLine = listLinePattern.test(line);
+		if (isListLine && offset <= normalized.anchor) {
+			addedBeforeAnchor += INDENT.length;
+		}
+		if (isListLine && offset <= normalized.head) {
+			addedBeforeHead += INDENT.length;
+		}
+		offset = lineEnd + lineBreak.length;
+	}
+
+	return buildInsertEdit({
+		from: firstLineStart,
+		insert: newLines.join(lineBreak),
+		selection: {
+			anchor: normalized.anchor + addedBeforeAnchor,
+			head: normalized.head + addedBeforeHead,
+		},
+		to: lastLineEnd,
+	});
+};
+
+export const createComposerListOutdentEdit = ({
+	lineBreak = '\n',
+	selection,
+	value,
+}: {
+	lineBreak?: string;
+	selection: ComposerSelection;
+	value: string;
+}): ComposerEdit | null => {
+	const normalized = normalizeSelection(selection, value.length);
+	const { firstLineStart, lastLineEnd, lines } = getSelectedLines(value, normalized, lineBreak);
+
+	let anyOutdented = false;
+	const removals: number[] = [];
+	const newLines = lines.map((line) => {
+		const match = listLinePattern.exec(line);
+		if (match) {
+			const leadingSpaces = match[1]!;
+			if (leadingSpaces.length > 0) {
+				// Indented list line: remove up to INDENT.length spaces
+				const removeCount = Math.min(leadingSpaces.length, INDENT.length);
+				anyOutdented = true;
+				removals.push(removeCount);
+				return line.slice(removeCount);
+			}
+			// Top-level list line: strip the marker entirely ("- ", "* ", "1. ", etc.)
+			const markerWithSpace = match[0]!;
+			anyOutdented = true;
+			removals.push(markerWithSpace.length);
+			return line.slice(markerWithSpace.length);
+		}
+		removals.push(0);
+		return line;
+	});
+
+	if (!anyOutdented) {
+		return null;
+	}
+
+	let removedBeforeAnchor = 0;
+	let removedBeforeHead = 0;
+	let offset = firstLineStart;
+	for (let i = 0; i < lines.length; i++) {
+		const lineEnd = offset + lines[i]!.length;
+		const removed = removals[i]!;
+		if (removed > 0 && offset <= normalized.anchor) {
+			removedBeforeAnchor += removed;
+		}
+		if (removed > 0 && offset <= normalized.head) {
+			removedBeforeHead += removed;
+		}
+		offset = lineEnd + lineBreak.length;
+	}
+
+	return buildInsertEdit({
+		from: firstLineStart,
+		insert: newLines.join(lineBreak),
+		selection: {
+			anchor: normalized.anchor - removedBeforeAnchor,
+			head: normalized.head - removedBeforeHead,
+		},
+		to: lastLineEnd,
+	});
+};

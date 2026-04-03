@@ -305,6 +305,7 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
         }
 
         response = await client.sendRoomMessage(session, {
+          ...(body.submissionId ? { messageId: body.submissionId } : {}),
           roomId: conversationId,
           text: body.content.text,
           ...(quoteMessageLink ? { quoteMessageLink } : {}),
@@ -326,6 +327,7 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
 
         await getThreadRootMessage(client, session, conversationId, body.target.threadId);
         response = await client.sendThreadMessage(session, {
+          ...(body.submissionId ? { messageId: body.submissionId } : {}),
           roomId: conversationId,
           threadId: body.target.threadId,
           text: body.content.text,
@@ -342,18 +344,17 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
         session,
         body.target.kind === 'conversation' ? body.target.replyToMessageId : body.target.threadId,
       );
-      const sync = await buildFreshConversationSnapshotSync(snapshotService, session, conversationId, {
-        includeDirectory: true,
-        includeConversation: true,
-        includeTimeline: body.target.kind === 'conversation' || body.target.echoToConversation === true,
-        ...(body.target.kind === 'thread' ? { threadId: body.target.threadId } : {}),
-      });
+      const normalizedMessage = normalizeConversationMessage(
+        config.upstreamUrl,
+        response.message,
+        parentMessages,
+        authorizationContext,
+      );
 
       return c.json({
         ok: true,
         data: {
-          message: normalizeConversationMessage(config.upstreamUrl, response.message, parentMessages, authorizationContext),
-          sync,
+          message: body.submissionId ? { ...normalizedMessage, submissionId: body.submissionId } : normalizedMessage,
         },
       });
     } catch (error) {
@@ -595,18 +596,10 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
           session,
           target.kind === 'conversation' ? parentMessageId : target.threadId,
         );
-        const sync = await buildFreshConversationSnapshotSync(snapshotService, session, conversationId, {
-          includeDirectory: true,
-          includeConversation: true,
-          includeTimeline: target.kind === 'conversation' || target.echoToConversation === true,
-          ...(target.kind === 'thread' ? { threadId: target.threadId } : {}),
-        });
-
         return c.json({
           ok: true,
           data: {
             message: normalizeConversationMessage(config.upstreamUrl, confirmed.message, parentMessages, authorizationContext),
-            sync,
           },
         });
       } finally {

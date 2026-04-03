@@ -201,6 +201,19 @@ export const normalizeDirectoryEntry = (
       : undefined,
 });
 
+export const compareDirectoryEntries = (left: DirectoryEntry, right: DirectoryEntry): number => {
+  const leftTime = left.conversation.lastActivityAt ? Date.parse(left.conversation.lastActivityAt) : 0;
+  const rightTime = right.conversation.lastActivityAt ? Date.parse(right.conversation.lastActivityAt) : 0;
+  if (leftTime !== rightTime) {
+    return rightTime - leftTime;
+  }
+
+  return left.conversation.id.localeCompare(right.conversation.id);
+};
+
+export const sortDirectoryEntries = (entries: Iterable<DirectoryEntry>): DirectoryEntry[] =>
+  [...entries].sort(compareDirectoryEntries);
+
 export const normalizeDirectorySnapshot = (
   rooms: UpstreamRoom[],
   subscriptions: UpstreamSubscription[],
@@ -210,31 +223,24 @@ export const normalizeDirectorySnapshot = (
 ): DirectorySnapshotPayload => {
   const roomMap = new Map(rooms.map((room) => [room._id, room]));
 
-  const entries = subscriptions
-    .filter((subscription) => subscription.t in SUPPORTED_ROOM_TYPES)
-    .map((subscription) =>
-      normalizeDirectoryEntry(
-        roomMap.get(subscription.rid),
-        subscription,
-        currentUsername,
-        inboxByConversationId.get(subscription.rid) || {
-          unreadMessages: 0,
-          mentionCount: 0,
-          replyCount: 0,
-          hasThreadActivity: false,
-          hasUncountedActivity: false,
-        },
-        presenceByConversationId.get(subscription.rid),
-      ))
-    .sort((left, right) => {
-      const leftTime = left.conversation.lastActivityAt ? Date.parse(left.conversation.lastActivityAt) : 0;
-      const rightTime = right.conversation.lastActivityAt ? Date.parse(right.conversation.lastActivityAt) : 0;
-      if (leftTime !== rightTime) {
-        return rightTime - leftTime;
-      }
-
-      return left.conversation.id.localeCompare(right.conversation.id);
-    });
+  const entries = sortDirectoryEntries(
+    subscriptions
+      .filter((subscription) => subscription.t in SUPPORTED_ROOM_TYPES)
+      .map((subscription) =>
+        normalizeDirectoryEntry(
+          roomMap.get(subscription.rid),
+          subscription,
+          currentUsername,
+          inboxByConversationId.get(subscription.rid) || {
+            unreadMessages: 0,
+            mentionCount: 0,
+            replyCount: 0,
+            hasThreadActivity: false,
+            hasUncountedActivity: false,
+          },
+          presenceByConversationId.get(subscription.rid),
+        )),
+  );
 
   return { entries };
 };

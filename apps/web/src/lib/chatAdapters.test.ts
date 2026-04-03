@@ -1,7 +1,15 @@
 import { describe, expect, it } from 'bun:test';
-import type { ConversationMessage, DirectoryEntry, DirectConversationLookup, EnsureDirectConversationResponse } from '@betterchat/contracts';
+import type { ConversationMessage, DeleteMessageResponse, DirectoryEntry, DirectConversationLookup, EnsureDirectConversationResponse, UpdateMessageResponse } from '@betterchat/contracts';
 
-import { toDirectConversationLookupResult, toEnsureDirectConversationResult, toRoomSummary, toTimelineMessage } from './chatAdapters';
+import {
+	toCreateConversationMessageRequest,
+	toDeleteMessageResponse,
+	toDirectConversationLookupResult,
+	toEditMessageResponse,
+	toEnsureDirectConversationResult,
+	toRoomSummary,
+	toTimelineMessage,
+} from './chatAdapters';
 
 const baseDirectoryEntry = (handle?: string): DirectoryEntry => ({
 	conversation: {
@@ -40,24 +48,29 @@ describe('toRoomSummary', () => {
 });
 
 describe('toTimelineMessage', () => {
+	const baseMessage: ConversationMessage = {
+		id: 'message-1',
+		submissionId: 'submission-1',
+		conversationId: 'room-1',
+		authoredAt: '2026-03-27T12:00:00.000Z',
+		author: {
+			id: 'user-1',
+			displayName: 'Alice',
+			username: 'alice',
+		},
+		content: {
+			format: 'markdown',
+			text: '看图',
+		},
+		state: {
+			edited: false,
+			deleted: false,
+		},
+	};
+
 	it('maps image attachments into preview and source assets so the timeline and viewer can use different URLs', () => {
 		const message: ConversationMessage = {
-			id: 'message-1',
-			conversationId: 'room-1',
-			authoredAt: '2026-03-27T12:00:00.000Z',
-			author: {
-				id: 'user-1',
-				displayName: 'Alice',
-				username: 'alice',
-			},
-			content: {
-				format: 'markdown',
-				text: '看图',
-			},
-			state: {
-				edited: false,
-				deleted: false,
-			},
+			...baseMessage,
 			attachments: [
 				{
 					kind: 'image',
@@ -92,6 +105,40 @@ describe('toTimelineMessage', () => {
 				},
 			},
 		]);
+		expect(toTimelineMessage(message).submissionId).toBe('submission-1');
+	});
+
+	it('propagates actions when present on the source message', () => {
+		const message: ConversationMessage = {
+			...baseMessage,
+			actions: { edit: true, delete: false },
+		};
+
+		expect(toTimelineMessage(message).actions).toEqual({ edit: true, delete: false });
+	});
+
+	it('sets actions to undefined when absent on the source message', () => {
+		expect(toTimelineMessage(baseMessage).actions).toBeUndefined();
+	});
+});
+
+describe('toCreateConversationMessageRequest', () => {
+	it('forwards submission ids so the backend can reconcile canonical sends explicitly', () => {
+		expect(
+			toCreateConversationMessageRequest({
+				submissionId: 'submission-42',
+				text: 'hello world',
+			}),
+		).toEqual({
+			submissionId: 'submission-42',
+			target: {
+				kind: 'conversation',
+			},
+			content: {
+				format: 'markdown',
+				text: 'hello world',
+			},
+		});
 	});
 });
 
@@ -149,5 +196,53 @@ describe('direct conversation adapters', () => {
 				threadVersion: undefined,
 			},
 		});
+	});
+});
+
+describe('toEditMessageResponse', () => {
+	it('maps contract update response to frontend edit response', () => {
+		const response: UpdateMessageResponse = {
+			message: {
+				id: 'msg-1',
+				conversationId: 'room-1',
+				authoredAt: '2026-03-27T12:00:00.000Z',
+				updatedAt: '2026-03-27T12:05:00.000Z',
+				author: { id: 'user-1', displayName: 'Alice', username: 'alice' },
+				content: { format: 'markdown', text: '编辑后' },
+				state: { edited: true, deleted: false },
+				actions: { edit: true, delete: true },
+			},
+			sync: {
+				directoryVersion: 'dir-v2',
+				conversationVersion: 'conv-v2',
+				timelineVersion: 'tl-v2',
+			},
+		};
+
+		const result = toEditMessageResponse(response);
+		expect(result.message.id).toBe('msg-1');
+		expect(result.message.body.rawMarkdown).toBe('编辑后');
+		expect(result.message.flags.edited).toBe(true);
+		expect(result.message.actions).toEqual({ edit: true, delete: true });
+		expect(result.sync.roomListVersion).toBe('dir-v2');
+		expect(result.sync.timelineVersion).toBe('tl-v2');
+	});
+});
+
+describe('toDeleteMessageResponse', () => {
+	it('maps contract delete response to frontend delete response', () => {
+		const response: DeleteMessageResponse = {
+			messageId: 'msg-99',
+			sync: {
+				directoryVersion: 'dir-v3',
+				conversationVersion: 'conv-v3',
+				timelineVersion: 'tl-v3',
+			},
+		};
+
+		const result = toDeleteMessageResponse(response);
+		expect(result.messageId).toBe('msg-99');
+		expect(result.sync.roomListVersion).toBe('dir-v3');
+		expect(result.sync.timelineVersion).toBe('tl-v3');
 	});
 });

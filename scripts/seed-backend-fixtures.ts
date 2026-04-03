@@ -210,6 +210,7 @@ const ensureSettings = async (): Promise<void> => {
       settings.updateOne({ _id: 'Organization_Name' }, { $set: { value: WORKSPACE_NAME } }, { upsert: true }),
       settings.updateOne({ _id: 'Site_Name' }, { $set: { value: WORKSPACE_NAME } }, { upsert: true }),
       settings.updateOne({ _id: 'API_Enable_Rate_Limiter_Dev' }, { $set: { value: false } }, { upsert: true }),
+      settings.updateOne({ _id: 'Message_MaxAllowedSize' }, { $set: { value: 500000 } }, { upsert: true }),
     ]);
   } finally {
     await mongoClient.close();
@@ -826,6 +827,7 @@ try {
     setAliceRoomState(privateHidden.roomId, privateHidden.favoriteForAlice, Boolean(privateHidden.hiddenForAlice)),
   ]);
 
+  await markReadAsAlice(publicEmpty.roomId);
   await markReadAsAlice(publicMain.roomId);
   const publicUnreadMention = await ensureMessage({
     client: bobClient,

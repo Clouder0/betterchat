@@ -55,7 +55,8 @@ const testSession: UpstreamSession = {
 const conversationId = 'conversation-1';
 const threadId = 'thread-1';
 const peerUserId = 'peer-1';
-const flushTasks = async (cycles = 6): Promise<void> => {
+const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+const flushTasks = async (cycles = 16): Promise<void> => {
   for (let index = 0; index < cycles; index += 1) {
     await Promise.resolve();
   }
@@ -82,6 +83,28 @@ const directoryState = (version: string, counterpartPresence: PresenceState = 'a
         },
       },
     ],
+  },
+});
+
+const directoryEntryState = (
+  title = 'Bob Example',
+  counterpartPresence: PresenceState = 'away',
+) => ({
+  counterpartUserIdByConversationId: new Map([[conversationId, peerUserId]]),
+  entry: {
+    conversation: {
+      id: conversationId,
+      kind: { mode: 'direct' as const },
+      title,
+    },
+    membership: {
+      listing: 'listed' as const,
+      starred: false,
+      inbox: emptyMembershipInbox,
+    },
+    live: {
+      counterpartPresence,
+    },
   },
 });
 
@@ -197,7 +220,7 @@ class FakeUpstreamRealtime implements UpstreamRealtimeController {
     this.callbacks?.onRoomChanged(nextRoomId, reason, options);
   }
 
-  emitSidebarChanged(options?: { forceResync?: boolean }): void {
+  emitSidebarChanged(options?: { conversationId?: string; forceResync?: boolean }): void {
     this.callbacks?.onSidebarChanged(options);
   }
 
@@ -272,25 +295,63 @@ class FakeUpstreamRealtime implements UpstreamRealtimeController {
   }
 }
 
-const createSnapshotServiceStub = (overrides: Partial<SnapshotService>): SnapshotService =>
-  ({
+const createSnapshotServiceStub = (overrides: Partial<SnapshotService>): SnapshotService => {
+  const stub: Partial<SnapshotService> = {
     clearSession: () => undefined,
     conversation: async () => conversationState('conversation-v0').snapshot,
     conversationState: async () => conversationState('conversation-v0'),
     conversationTimeline: async () => conversationTimeline('timeline-v0'),
+    directoryEntryState: async () => directoryEntryState(),
     directory: async () => directoryState('directory-v0').snapshot,
     directoryState: async () => directoryState('directory-v0'),
     invalidateConversation: () => undefined,
     invalidateDirectory: () => undefined,
     invalidateThread: () => undefined,
+    refreshConversationStateWithTimeline: async () => {
+      stub.invalidateConversation?.(testSession, conversationId);
+      const [nextConversationState, nextTimeline] = await Promise.all([
+        stub.conversationState!(testSession, conversationId),
+        stub.conversationTimeline!(testSession, conversationId),
+      ]);
+
+      return {
+        conversationState: nextConversationState,
+        timeline: nextTimeline,
+      };
+    },
+    refreshDirectoryState: async () => {
+      stub.invalidateDirectory?.(testSession);
+      return stub.directoryState!(testSession);
+    },
+    refreshDirectoryEntryState: async (_session: UpstreamSession, nextConversationId: string) => {
+      stub.invalidateDirectory?.(testSession);
+      return stub.directoryEntryState!(testSession, nextConversationId);
+    },
+    refreshThreadConversationTimeline: async (_session: UpstreamSession, nextConversationId: string, nextThreadId: string) => {
+      stub.invalidateThread?.(testSession, nextConversationId, nextThreadId);
+      return stub.threadConversationTimeline!(testSession, nextConversationId, nextThreadId);
+    },
     threadConversationTimeline: async () => threadTimeline('thread-v0'),
     ...overrides,
-  }) as unknown as SnapshotService;
+  };
+
+  return stub as SnapshotService;
+};
 
 const createConnection = (
   snapshotService: SnapshotService,
   upstreamRealtime: FakeUpstreamRealtime,
-  client: RocketChatClient = {
+  client?: RocketChatClient,
+  options: {
+    session?: UpstreamSession;
+    sessionKey?: string;
+  } = {},
+): {
+  connection: ConversationStreamConnection;
+  events: ConversationStreamServerEvent[];
+} => {
+  const events: ConversationStreamServerEvent[] = [];
+  const resolvedClient = client ?? {
     getUsersPresence: async () => ({
       success: true,
       users: [
@@ -301,22 +362,19 @@ const createConnection = (
       ],
       full: true,
     }),
-  } as unknown as RocketChatClient,
-): {
-  connection: ConversationStreamConnection;
-  events: ConversationStreamServerEvent[];
-} => {
-  const events: ConversationStreamServerEvent[] = [];
+  } as unknown as RocketChatClient;
+  const session = options.session ?? testSession;
+  const sessionKey = options.sessionKey ?? 'stream-test-session-key';
   const createUpstreamRealtime: UpstreamRealtimeFactory = (callbacks) => {
     upstreamRealtime.attachCallbacks(callbacks);
     return upstreamRealtime;
   };
   const connection = new ConversationStreamConnection(
     testConfig,
-    client,
+    resolvedClient,
     snapshotService,
-    'stream-test-session-key',
-    testSession,
+    sessionKey,
+    session,
     (payload) => {
       events.push(JSON.parse(payload) as ConversationStreamServerEvent);
     },
@@ -394,6 +452,87 @@ describe('ConversationStreamConnection', () => {
     ]);
   });
 
+  test('does not refresh the directory again when an already watched connection replays the latest version hint', async () => {
+    const upstreamRealtime = new FakeUpstreamRealtime();
+    const calls: string[] = [];
+    const snapshotService = createSnapshotServiceStub({
+      invalidateDirectory: () => {
+        calls.push('invalidateDirectory');
+      },
+      directoryState: async () => {
+        calls.push('directoryState');
+        return directoryState('directory-v1');
+      },
+    });
+    const { connection, events } = createConnection(snapshotService, upstreamRealtime);
+
+    connection.handleIncoming(JSON.stringify({ type: 'watch-directory' }));
+    await flushTasks();
+
+    expect(calls).toEqual(['invalidateDirectory', 'directoryState']);
+    expect(events).toEqual([
+      {
+        type: 'directory.resynced',
+        snapshot: directoryState('directory-v1').snapshot,
+      },
+    ]);
+
+    calls.length = 0;
+    events.length = 0;
+
+    connection.handleIncoming(JSON.stringify({
+      type: 'watch-directory',
+      directoryVersion: 'directory-v1',
+    }));
+    await flushTasks();
+
+    expect(calls).toEqual([]);
+    expect(events).toEqual([]);
+  });
+
+  test('coalesces same-user distinct-session directory refreshes across connections', async () => {
+    const firstRealtime = new FakeUpstreamRealtime();
+    const secondRealtime = new FakeUpstreamRealtime();
+    const secondSession: UpstreamSession = {
+      ...testSession,
+      authToken: 'stream-test-auth-token-2',
+    };
+    let refreshCount = 0;
+    const snapshotService = createSnapshotServiceStub({
+      refreshDirectoryState: async () => {
+        refreshCount += 1;
+        await delay(20);
+        return directoryState('directory-v1');
+      },
+    });
+    const { connection: firstConnection, events: firstEvents } = createConnection(
+      snapshotService,
+      firstRealtime,
+      undefined,
+      { session: testSession, sessionKey: 'stream-test-session-key-1' },
+    );
+    const { connection: secondConnection, events: secondEvents } = createConnection(
+      snapshotService,
+      secondRealtime,
+      undefined,
+      { session: secondSession, sessionKey: 'stream-test-session-key-2' },
+    );
+
+    firstConnection.handleIncoming(JSON.stringify({ type: 'watch-directory' }));
+    secondConnection.handleIncoming(JSON.stringify({ type: 'watch-directory' }));
+    await delay(30);
+    await flushTasks();
+
+    expect(refreshCount).toBe(1);
+    expect(firstEvents).toEqual([
+      {
+        type: 'directory.resynced',
+        snapshot: directoryState('directory-v1').snapshot,
+      },
+    ]);
+    expect(secondEvents).toEqual(firstEvents);
+  });
+
   test('stops directory refreshes after unwatch-directory', async () => {
     const upstreamRealtime = new FakeUpstreamRealtime();
     const calls: string[] = [];
@@ -464,6 +603,96 @@ describe('ConversationStreamConnection', () => {
         snapshot: conversationTimeline('timeline-v1'),
       },
     ]);
+  });
+
+  test('does not refresh an already watched conversation when the client replays the latest conversation and timeline versions', async () => {
+    const upstreamRealtime = new FakeUpstreamRealtime();
+    upstreamRealtime.markRoomSubscriptionsReady(conversationId);
+    const calls: string[] = [];
+    const snapshotService = createSnapshotServiceStub({
+      invalidateConversation: () => {
+        calls.push('invalidateConversation');
+      },
+      conversationState: async () => {
+        calls.push('conversationState');
+        return conversationState('conversation-v1');
+      },
+      conversationTimeline: async () => {
+        calls.push('conversationTimeline');
+        return conversationTimeline('timeline-v1');
+      },
+    });
+    const { connection, events } = createConnection(snapshotService, upstreamRealtime);
+
+    connection.handleIncoming(JSON.stringify({ type: 'watch-conversation', conversationId }));
+    await flushTasks();
+
+    expect(calls).toEqual(['invalidateConversation', 'conversationState', 'conversationTimeline']);
+    expect(events).toEqual([
+      {
+        type: 'conversation.resynced',
+        snapshot: conversationState('conversation-v1').snapshot,
+      },
+      {
+        type: 'timeline.resynced',
+        snapshot: conversationTimeline('timeline-v1'),
+      },
+    ]);
+
+    calls.length = 0;
+    events.length = 0;
+
+    connection.handleIncoming(JSON.stringify({
+      type: 'watch-conversation',
+      conversationId,
+      conversationVersion: 'conversation-v1',
+      timelineVersion: 'timeline-v1',
+    }));
+    await flushTasks();
+
+    expect(calls).toEqual([]);
+    expect(events).toEqual([]);
+  });
+
+  test('does not refresh an already watched thread when the client replays the latest thread version', async () => {
+    const upstreamRealtime = new FakeUpstreamRealtime();
+    upstreamRealtime.markRoomSubscriptionsReady(conversationId);
+    const calls: string[] = [];
+    const snapshotService = createSnapshotServiceStub({
+      invalidateThread: () => {
+        calls.push('invalidateThread');
+      },
+      threadConversationTimeline: async () => {
+        calls.push('threadConversationTimeline');
+        return threadTimeline('thread-v1');
+      },
+    });
+    const { connection, events } = createConnection(snapshotService, upstreamRealtime);
+
+    connection.handleIncoming(JSON.stringify({ type: 'watch-thread', conversationId, threadId }));
+    await flushTasks();
+
+    expect(calls).toEqual(['invalidateThread', 'threadConversationTimeline']);
+    expect(events).toEqual([
+      {
+        type: 'thread.resynced',
+        snapshot: threadTimeline('thread-v1'),
+      },
+    ]);
+
+    calls.length = 0;
+    events.length = 0;
+
+    connection.handleIncoming(JSON.stringify({
+      type: 'watch-thread',
+      conversationId,
+      threadId,
+      threadVersion: 'thread-v1',
+    }));
+    await flushTasks();
+
+    expect(calls).toEqual([]);
+    expect(events).toEqual([]);
   });
 
   test('seeds dedupe signatures when watch version hints already match the latest snapshots', async () => {
@@ -565,6 +794,115 @@ describe('ConversationStreamConnection', () => {
         snapshot: conversationTimeline(currentTimelineVersion),
       },
     ]);
+  });
+
+  test('coalesces same-user distinct-session watched conversation refreshes across connections', async () => {
+    const firstRealtime = new FakeUpstreamRealtime();
+    const secondRealtime = new FakeUpstreamRealtime();
+    firstRealtime.markRoomSubscriptionsReady(conversationId);
+    secondRealtime.markRoomSubscriptionsReady(conversationId);
+    const secondSession: UpstreamSession = {
+      ...testSession,
+      authToken: 'stream-test-auth-token-2',
+    };
+    let currentConversationVersion = 'conversation-v1';
+    let currentTimelineVersion = 'timeline-v1';
+    let refreshCount = 0;
+    const snapshotService = createSnapshotServiceStub({
+      refreshConversationStateWithTimeline: async () => {
+        refreshCount += 1;
+        await delay(20);
+        return {
+          conversationState: conversationState(currentConversationVersion),
+          timeline: conversationTimeline(currentTimelineVersion),
+        };
+      },
+    });
+    const { connection: firstConnection, events: firstEvents } = createConnection(
+      snapshotService,
+      firstRealtime,
+      undefined,
+      { session: testSession, sessionKey: 'stream-test-session-key-1' },
+    );
+    const { connection: secondConnection, events: secondEvents } = createConnection(
+      snapshotService,
+      secondRealtime,
+      undefined,
+      { session: secondSession, sessionKey: 'stream-test-session-key-2' },
+    );
+
+    firstConnection.handleIncoming(JSON.stringify({ type: 'watch-conversation', conversationId }));
+    secondConnection.handleIncoming(JSON.stringify({ type: 'watch-conversation', conversationId }));
+    await delay(30);
+    await flushTasks();
+
+    expect(refreshCount).toBe(1);
+    firstEvents.length = 0;
+    secondEvents.length = 0;
+    currentConversationVersion = 'conversation-v2';
+    currentTimelineVersion = 'timeline-v2';
+
+    firstRealtime.emitRoomChanged(conversationId, 'messages-changed');
+    secondRealtime.emitRoomChanged(conversationId, 'messages-changed');
+    await delay(30);
+    await flushTasks();
+
+    expect(refreshCount).toBe(2);
+    expect(firstEvents).toEqual([
+      {
+        type: 'conversation.updated',
+        snapshot: conversationState('conversation-v2').snapshot,
+      },
+      {
+        type: 'timeline.resynced',
+        snapshot: conversationTimeline('timeline-v2'),
+      },
+    ]);
+    expect(secondEvents).toEqual(firstEvents);
+  });
+
+  test('keeps distinct-user watched conversation refreshes independent across connections', async () => {
+    const firstRealtime = new FakeUpstreamRealtime();
+    const secondRealtime = new FakeUpstreamRealtime();
+    firstRealtime.markRoomSubscriptionsReady(conversationId);
+    secondRealtime.markRoomSubscriptionsReady(conversationId);
+    const otherUserSession: UpstreamSession = {
+      ...testSession,
+      authToken: 'other-user-auth-token',
+      displayName: 'Bob Example',
+      userId: 'bob-id',
+      username: 'bob',
+    };
+    let refreshCount = 0;
+    const snapshotService = createSnapshotServiceStub({
+      refreshConversationStateWithTimeline: async () => {
+        refreshCount += 1;
+        await delay(20);
+        return {
+          conversationState: conversationState('conversation-v1'),
+          timeline: conversationTimeline('timeline-v1'),
+        };
+      },
+    });
+    const { connection: firstConnection } = createConnection(
+      snapshotService,
+      firstRealtime,
+      undefined,
+      { session: testSession, sessionKey: 'stream-test-session-key-1' },
+    );
+    const { connection: secondConnection } = createConnection(
+      snapshotService,
+      secondRealtime,
+      undefined,
+      { session: otherUserSession, sessionKey: 'stream-test-session-key-2' },
+    );
+
+    firstConnection.handleIncoming(JSON.stringify({ type: 'watch-conversation', conversationId }));
+    secondConnection.handleIncoming(JSON.stringify({ type: 'watch-conversation', conversationId }));
+    await delay(30);
+    await flushTasks();
+
+    expect(refreshCount).toBe(2);
   });
 
   test('stops conversation refreshes and typing updates after unwatch-conversation', async () => {
@@ -939,6 +1277,42 @@ describe('ConversationStreamConnection', () => {
         type: 'directory.entry.remove',
         version: 'directory-v2',
         conversationId,
+      },
+    ]);
+  });
+
+  test('uses targeted directory entry refresh when realtime identifies the changed conversation', async () => {
+    const upstreamRealtime = new FakeUpstreamRealtime();
+    let refreshDirectoryStateCallCount = 0;
+    let refreshDirectoryEntryStateCallCount = 0;
+    const snapshotService = createSnapshotServiceStub({
+      refreshDirectoryState: async () => {
+        refreshDirectoryStateCallCount += 1;
+        return directoryState('directory-v1');
+      },
+      refreshDirectoryEntryState: async () => {
+        refreshDirectoryEntryStateCallCount += 1;
+        return directoryEntryState('Bob Example (updated)');
+      },
+    });
+    const { connection, events } = createConnection(snapshotService, upstreamRealtime);
+
+    connection.handleIncoming(JSON.stringify({ type: 'watch-directory' }));
+    await flushTasks();
+    events.length = 0;
+
+    upstreamRealtime.emitSidebarChanged({ conversationId });
+    await flushTasks();
+
+    expect(refreshDirectoryStateCallCount).toBe(1);
+    expect(refreshDirectoryEntryStateCallCount).toBe(1);
+    expect(events).toEqual([
+      {
+        type: 'directory.entry.upsert',
+        version: computeSnapshotVersion({
+          entries: [directoryEntryState('Bob Example (updated)').entry],
+        }),
+        entry: directoryEntryState('Bob Example (updated)').entry,
       },
     ]);
   });

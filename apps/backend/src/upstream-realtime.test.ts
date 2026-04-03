@@ -453,6 +453,106 @@ describe('upstream realtime helpers', () => {
     }
   });
 
+  test('emits sidebar invalidations with room ids for notify-user subscription and room changes', async () => {
+    const sidebarEvents: Array<{ conversationId?: string }> = [];
+    let mandatorySubscriptionIds: string[] = [];
+    let socketRef: Bun.ServerWebSocket<unknown> | undefined;
+
+    const server = Bun.serve({
+      port: 0,
+      fetch(request, server) {
+        if (new URL(request.url).pathname === '/websocket' && server.upgrade(request)) {
+          return undefined;
+        }
+
+        return new Response('not found', { status: 404 });
+      },
+      websocket: {
+        open(ws) {
+          socketRef = ws;
+        },
+        message(ws, message) {
+          const payload = JSON.parse(String(message));
+
+          if (payload.msg === 'connect') {
+            ws.send(JSON.stringify({ msg: 'connected', session: 'upstream-ddp-session' }));
+            return;
+          }
+
+          if (payload.msg === 'method' && payload.method === 'login') {
+            ws.send(JSON.stringify({ msg: 'result', id: payload.id, result: { tokenExpires: null } }));
+            return;
+          }
+
+          if (payload.msg === 'sub') {
+            mandatorySubscriptionIds.push(String(payload.id));
+            if (mandatorySubscriptionIds.length === 6) {
+              ws.send(JSON.stringify({ msg: 'ready', subs: mandatorySubscriptionIds }));
+            }
+          }
+        },
+      },
+    });
+
+    const session: UpstreamSession = {
+      userId: 'alice-id',
+      authToken: 'auth-token',
+      username: 'alice',
+      displayName: 'Alice Example',
+      createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    const bridge = new UpstreamRealtimeBridge(
+      `http://127.0.0.1:${server.port}`,
+      {
+        getMe: async () => ({ _id: 'alice-id', success: true, username: 'alice' }),
+      } as unknown as RocketChatClient,
+      session,
+      {
+        onCapabilitiesChanged: () => undefined,
+        onError: () => undefined,
+        onHealthy: () => undefined,
+        onPresenceChanged: () => undefined,
+        onRoomChanged: () => undefined,
+        onSessionInvalidated: () => undefined,
+        onSidebarChanged: (options) => {
+          sidebarEvents.push(options ?? {});
+        },
+        onTypingChanged: () => undefined,
+      },
+    );
+
+    try {
+      await bridge.start();
+
+      socketRef?.send(JSON.stringify({
+        msg: 'changed',
+        collection: 'stream-notify-user',
+        fields: {
+          eventName: `${session.userId}/subscriptions-changed`,
+          args: ['updated', { rid: 'room-1' }],
+        },
+      }));
+      socketRef?.send(JSON.stringify({
+        msg: 'changed',
+        collection: 'stream-notify-user',
+        fields: {
+          eventName: `${session.userId}/rooms-changed`,
+          args: ['updated', { _id: 'room-2' }],
+        },
+      }));
+
+      await waitForCondition(() => sidebarEvents.length === 2);
+      expect(sidebarEvents).toEqual([
+        { conversationId: 'room-1' },
+        { conversationId: 'room-2' },
+      ]);
+    } finally {
+      bridge.stop();
+      await server.stop(true);
+    }
+  });
+
   test('emits capability invalidations for permissions, roles, and relevant public settings only', async () => {
     const capabilityEvents: string[] = [];
     let mandatorySubscriptionIds: string[] = [];

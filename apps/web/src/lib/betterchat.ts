@@ -7,6 +7,7 @@ import type {
 	ConversationSnapshot,
 	ConversationTimelineSnapshot,
 	CreateConversationMessageResponse,
+	DeleteMessageResponse as ContractDeleteMessageResponse,
 	DirectorySnapshot,
 	DirectConversationLookup,
 	EnsureDirectConversationResponse,
@@ -14,12 +15,15 @@ import type {
 	LoginResponse,
 	MembershipCommandResponse,
 	PublicBootstrap,
+	UpdateMessageResponse as ContractUpdateMessageResponse,
 	WorkspaceBootstrap,
 } from '@betterchat/contracts';
 
 import {
 	toCreateConversationMessageRequest,
+	toDeleteMessageResponse,
 	toDirectConversationLookupResult,
+	toEditMessageResponse,
 	toEnsureDirectConversationResult,
 	toFavoriteMutationResponse,
 	toMessageContextSnapshot,
@@ -31,7 +35,10 @@ import {
 	toVisibilityMutationResponse,
 } from './chatAdapters';
 import type {
+	DeleteMessageResponse,
 	DirectConversationLookupResult,
+	EditMessageRequest,
+	EditMessageResponse,
 	EnsureDirectConversationResult,
 	MessageContextSnapshot,
 	RoomFavoriteMutationResponse,
@@ -335,6 +342,29 @@ export const betterChatApi = {
 						method: 'POST',
 						body: JSON.stringify(toCreateConversationMessageRequest(request)),
 					}, TIMEOUTS.sendMessage),
+			  ),
+	editMessage: async (roomId: string, messageId: string, request: EditMessageRequest): Promise<EditMessageResponse> =>
+		useFixtureMode
+			? runFixture(async () => toEditMessageResponse(await fixtureBetterChatService.updateMessage(roomId, messageId, request)))
+			: toEditMessageResponse(
+					await requestJson<ContractUpdateMessageResponse>(
+						`/api/conversations/${roomId}/messages/${encodeURIComponent(messageId)}`,
+						{
+							method: 'PATCH',
+							body: JSON.stringify(request),
+						},
+						TIMEOUTS.sendMessage,
+					),
+			  ),
+	deleteMessage: async (roomId: string, messageId: string): Promise<DeleteMessageResponse> =>
+		useFixtureMode
+			? runFixture(async () => toDeleteMessageResponse(await fixtureBetterChatService.deleteMessage(roomId, messageId)))
+			: toDeleteMessageResponse(
+					await requestJson<ContractDeleteMessageResponse>(
+						`/api/conversations/${roomId}/messages/${encodeURIComponent(messageId)}`,
+						{ method: 'DELETE' },
+						TIMEOUTS.sendMessage,
+					),
 			  ),
 	uploadImage: async (roomId: string, request: { file: File; text?: string }): Promise<SendMessageResponse> => {
 		if (useFixtureMode) {

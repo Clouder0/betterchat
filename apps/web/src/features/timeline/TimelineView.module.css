@@ -243,7 +243,7 @@
 .messageBody::before {
 	content: '';
 	position: absolute;
-	inset: -0.32rem -0.38rem -0.28rem -0.32rem;
+	inset: -0.36rem -0.62rem -0.32rem -0.52rem;
 	border-radius: 0.8rem;
 	background: color-mix(in srgb, var(--surface-panel-muted) 82%, transparent);
 	opacity: 0;
@@ -273,7 +273,7 @@
 }
 
 .messageBody[data-grouped='true']::before {
-	inset: -0.18rem -0.34rem -0.22rem -0.28rem;
+	inset: -0.22rem -0.58rem -0.26rem -0.48rem;
 }
 
 .messageBody[data-grouped='true']::after {
@@ -294,7 +294,7 @@
 
 @media (hover: hover) and (pointer: fine) {
 	.messageStream[data-interaction-mode='pointer'] .messageRow:hover:not([data-highlighted='true']):not([data-context-open='true']) .messageBody::before {
-		opacity: 0.68;
+		opacity: 0.42;
 	}
 }
 

@@ -15,6 +15,8 @@ import type { ComposerEdit, ComposerSelection } from './composerEditing';
 import {
 	applyComposerEdit,
 	createComposerEnterEdit,
+	createComposerListIndentEdit,
+	createComposerListOutdentEdit,
 	createComposerTabEdit,
 } from './composerEditing';
 import { isCollapsedSelectionOnLastLine } from './composerBoundaryNavigation';
@@ -281,17 +283,33 @@ const ComposerTextareaFallback = forwardRef<LiveMarkdownEditorHandle, ComposerEd
 					return;
 				}
 
-				if (event.key === 'Tab') {
+				if (event.key === 'Tab' && !event.shiftKey) {
 					event.preventDefault();
+					const sel = {
+						selection: {
+							anchor: event.currentTarget.selectionStart ?? 0,
+							head: event.currentTarget.selectionEnd ?? 0,
+						},
+						value,
+					};
 					applyTextareaEdit(
-						createComposerTabEdit({
-							selection: {
-								anchor: event.currentTarget.selectionStart ?? 0,
-								head: event.currentTarget.selectionEnd ?? 0,
-							},
-							value,
-						}),
+						createComposerListIndentEdit(sel) ?? createComposerTabEdit(sel),
 					);
+					return;
+				}
+
+				if (event.key === 'Tab' && event.shiftKey) {
+					const edit = createComposerListOutdentEdit({
+						selection: {
+							anchor: event.currentTarget.selectionStart ?? 0,
+							head: event.currentTarget.selectionEnd ?? 0,
+						},
+						value,
+					});
+					if (edit) {
+						event.preventDefault();
+						applyTextareaEdit(edit);
+					}
 					return;
 				}
 
@@ -328,11 +346,18 @@ const ComposerTextareaFallback = forwardRef<LiveMarkdownEditorHandle, ComposerEd
 	);
 });
 
+export type ComposerEditTarget = {
+	messageId: string;
+	originalText: string;
+};
+
 export const ComposerBar = forwardRef<ComposerBarHandle, {
 	canUploadImages?: boolean;
 	disabled?: boolean;
 	disabledReason?: string;
+	editTarget?: ComposerEditTarget | null;
 	focusToken?: number;
+	onClearEdit?: () => void;
 	onFocusChange?: (focused: boolean) => void;
 	onReadyChange?: (ready: boolean) => void;
 	onNavigateUpBoundary?: () => boolean | void;
@@ -346,7 +371,9 @@ export const ComposerBar = forwardRef<ComposerBarHandle, {
 	canUploadImages = false,
 	disabled = false,
 	disabledReason,
+	editTarget,
 	focusToken = 0,
+	onClearEdit,
 	onFocusChange,
 	onReadyChange,
 	onNavigateUpBoundary,
@@ -469,6 +496,22 @@ export const ComposerBar = forwardRef<ComposerBarHandle, {
 			onReadyChange?.(false);
 		};
 	}, [LoadedLiveMarkdownEditor, onReadyChange, usesLoadedEditor]);
+
+	const prevEditTargetIdRef = useRef<string | null>(null);
+	useEffect(() => {
+		const nextId = editTarget?.messageId ?? null;
+		if (nextId !== prevEditTargetIdRef.current) {
+			prevEditTargetIdRef.current = nextId;
+			if (editTarget) {
+				setText(editTarget.originalText);
+				replaceSelectedImage(null);
+				setErrorMessage(null);
+				queueMicrotask(() => {
+					editorRef.current?.focus();
+				});
+			}
+		}
+	}, [editTarget, replaceSelectedImage]);
 
 	useImperativeHandle(
 		ref,
@@ -899,6 +942,26 @@ export const ComposerBar = forwardRef<ComposerBarHandle, {
 							className={styles.composeContextDismiss}
 							data-testid='composer-reply-cancel'
 							onClick={onClearReply}
+							type='button'
+						>
+							<span aria-hidden='true'>×</span>
+						</button>
+					) : null}
+				</div>
+			) : null}
+
+			{editTarget ? (
+				<div className={styles.composeContext} data-mode='edit' data-testid='composer-edit-context'>
+					<div className={styles.composeContextCopy}>
+						<p className={styles.composeContextLabel}>{spaceText('编辑消息')}</p>
+					</div>
+
+					{onClearEdit ? (
+						<button
+							aria-label='取消编辑'
+							className={styles.composeContextDismiss}
+							data-testid='composer-edit-cancel'
+							onClick={onClearEdit}
 							type='button'
 						>
 							<span aria-hidden='true'>×</span>

@@ -2,6 +2,7 @@ import type {
   ConversationMessageContextSnapshot,
   ConversationSnapshot,
   ConversationTimelineSnapshot,
+  DirectoryEntry,
   DirectorySnapshot,
 } from '@betterchat/contracts';
 
@@ -13,10 +14,11 @@ import {
   normalizeConversationMessageContext,
   normalizeConversationSnapshot,
   normalizeConversationTimeline,
+  normalizeDirectoryEntry,
   normalizeDirectorySnapshot,
   normalizeThreadTimeline,
 } from './conversation-domain';
-import { AppError } from './errors';
+import { AppError, toAppError } from './errors';
 import { projectMembershipInboxProjection } from './inbox-projector';
 import { assertValidConversationContextAnchorMessage, getThreadRootMessage, replyParentMessageIdFrom } from './message-helpers';
 import { nextCursorFrom, type PaginationRequest } from './pagination';
@@ -27,12 +29,18 @@ import type { UpstreamSession } from './session';
 import {
   collectInitialRoomTimelineMessagesPage,
   collectRoomTimelineContextPage,
+  getRoomSubscription,
 } from './snapshots';
 import { RocketChatClient, type UpstreamMessage, type UpstreamRoom, type UpstreamSubscription } from './upstream';
 
 type DirectorySnapshotState = {
   counterpartUserIdByConversationId: Map<string, string>;
   snapshot: DirectorySnapshot;
+};
+
+type DirectoryEntryState = {
+  counterpartUserIdByConversationId: Map<string, string>;
+  entry?: DirectoryEntry;
 };
 
 type ConversationSnapshotState = {
@@ -78,6 +86,9 @@ const counterpartUserIdByConversationIdFrom = (
 
   return result;
 };
+
+const supportedDirectoryRoomType = (roomType: string): roomType is 'c' | 'd' | 'p' =>
+  roomType === 'c' || roomType === 'd' || roomType === 'p';
 
 const fetchPresenceByUserId = async (
   client: RocketChatClient,
@@ -178,6 +189,61 @@ export const buildDirectorySnapshot = async (
   session: UpstreamSession,
   facts?: SnapshotFactCache,
 ): Promise<DirectorySnapshot> => (await buildDirectorySnapshotState(client, session, facts)).snapshot;
+
+export const buildDirectoryEntryState = async (
+  client: RocketChatClient,
+  session: UpstreamSession,
+  conversationId: string,
+  facts?: SnapshotFactCache,
+): Promise<DirectoryEntryState> => {
+  let subscription: UpstreamSubscription;
+  try {
+    subscription = await getRoomSubscription(client, session, conversationId, facts);
+  } catch (error) {
+    if (toAppError(error).status === 404) {
+      return {
+        counterpartUserIdByConversationId: new Map<string, string>(),
+      };
+    }
+
+    throw error;
+  }
+
+  if (!supportedDirectoryRoomType(subscription.t)) {
+    return {
+      counterpartUserIdByConversationId: new Map<string, string>(),
+    };
+  }
+
+  const [roomInfoResponse, meResponse, inboxProjection] = await Promise.all([
+    facts ? facts.getRoomInfo(client, session, conversationId) : client.getRoomInfo(session, conversationId),
+    facts ? facts.getMe(client, session) : client.getMe(session),
+    facts
+      ? facts.getMembershipInboxProjection(client, session, subscription, { mode: 'directory' })
+      : projectMembershipInboxProjection(client, session, subscription, { mode: 'directory' }),
+  ]);
+
+  if (!roomInfoResponse.room) {
+    return {
+      counterpartUserIdByConversationId: new Map<string, string>(),
+    };
+  }
+
+  const counterpartUserId = counterpartUserIdFrom(roomInfoResponse.room, subscription, session);
+  const presenceByUserId = await fetchPresenceByUserId(client, session, counterpartUserId ? [counterpartUserId] : [], facts);
+
+  return {
+    counterpartUserIdByConversationId:
+      counterpartUserId ? new Map<string, string>([[conversationId, counterpartUserId]]) : new Map<string, string>(),
+    entry: normalizeDirectoryEntry(
+      roomInfoResponse.room,
+      subscription,
+      meResponse.username,
+      inboxProjection.inbox,
+      counterpartUserId ? presenceByUserId.get(counterpartUserId) : undefined,
+    ),
+  };
+};
 
 export const buildConversationSnapshotState = async (
   client: RocketChatClient,

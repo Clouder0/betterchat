@@ -163,10 +163,6 @@ describe('createBetterChatRealtimeController', () => {
 				timelineVersion: 'timeline-v2',
 				type: 'watch-conversation',
 			},
-			{
-				directoryVersion: 'directory-v2',
-				type: 'watch-directory',
-			},
 			{ conversationId: 'room-2', type: 'unwatch-conversation' },
 			{ conversationId: 'room-3', type: 'watch-conversation' },
 		]);
@@ -174,7 +170,7 @@ describe('createBetterChatRealtimeController', () => {
 		controller.close();
 	});
 
-	it('re-sends a watch command when a watched conversation version hint changes', () => {
+	it('does not re-send watch commands when live versions advance on an already watched connection', () => {
 		const controller = createBetterChatRealtimeController({
 			onEvent() {},
 		});
@@ -211,15 +207,74 @@ describe('createBetterChatRealtimeController', () => {
 				timelineVersion: 'timeline-v1',
 				type: 'watch-conversation',
 			},
-			{
-				conversationId: 'room-2',
-				conversationVersion: 'room-v2',
-				timelineVersion: 'timeline-v2',
-				type: 'watch-conversation',
-			},
 		]);
 
 		controller.close();
+	});
+
+	it('reuses the latest version hints after reconnecting', () => {
+		const originalSetTimeout = window.setTimeout;
+		const originalClearTimeout = window.clearTimeout;
+		(window as Window & typeof globalThis).setTimeout = ((callback: TimerHandler) => {
+			if (typeof callback === 'function') {
+				callback();
+			}
+			return 1;
+		}) as typeof window.setTimeout;
+		(window as Window & typeof globalThis).clearTimeout = (() => undefined) as typeof window.clearTimeout;
+
+		try {
+			const controller = createBetterChatRealtimeController({
+				onEvent() {},
+			});
+
+			const initialSocket = FakeWebSocket.instances[0];
+			expect(initialSocket).toBeDefined();
+			if (!initialSocket) {
+				throw new Error('expected an initial fake realtime socket');
+			}
+
+			controller.setWatchState({
+				directoryVersion: 'directory-v2',
+				rooms: [{ roomId: 'room-2', roomVersion: 'room-v2', timelineVersion: 'timeline-v2' }],
+			});
+			initialSocket.dispatchMessage({
+				type: 'ready',
+				mode: 'push',
+				protocol: 'conversation-stream.v1',
+			});
+			initialSocket.close();
+
+			const reconnectedSocket = FakeWebSocket.instances[1];
+			expect(reconnectedSocket).toBeDefined();
+			if (!reconnectedSocket) {
+				throw new Error('expected a reconnected fake realtime socket');
+			}
+
+			reconnectedSocket.dispatchMessage({
+				type: 'ready',
+				mode: 'push',
+				protocol: 'conversation-stream.v1',
+			});
+
+			expect(readSentCommands(reconnectedSocket)).toEqual([
+				{
+					directoryVersion: 'directory-v2',
+					type: 'watch-directory',
+				},
+				{
+					conversationId: 'room-2',
+					conversationVersion: 'room-v2',
+					timelineVersion: 'timeline-v2',
+					type: 'watch-conversation',
+				},
+			]);
+
+			controller.close();
+		} finally {
+			(window as Window & typeof globalThis).setTimeout = originalSetTimeout;
+			(window as Window & typeof globalThis).clearTimeout = originalClearTimeout;
+		}
 	});
 
 	describe('onSocketError callback', () => {

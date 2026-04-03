@@ -74,6 +74,7 @@ export const parseCreateConversationMessageRequest = (
 
   const target = input.target;
   const content = input.content;
+  const submissionId = input.submissionId;
 
   if (!target || typeof target !== 'object') {
     throw new AppError('VALIDATION_ERROR', '"target" is required', 400);
@@ -82,6 +83,12 @@ export const parseCreateConversationMessageRequest = (
   if (!content || typeof content !== 'object') {
     throw new AppError('VALIDATION_ERROR', '"content" is required', 400);
   }
+
+  if (submissionId !== undefined && (typeof submissionId !== 'string' || submissionId.trim().length === 0)) {
+    throw new AppError('VALIDATION_ERROR', '"submissionId" must be a non-empty string when provided', 400);
+  }
+
+  const normalizedSubmissionId = submissionId?.trim();
 
   if (content.format !== 'markdown') {
     throw new AppError('VALIDATION_ERROR', '"content.format" must be "markdown"', 400);
@@ -100,6 +107,7 @@ export const parseCreateConversationMessageRequest = (
     }
 
     return {
+      ...(normalizedSubmissionId ? { submissionId: normalizedSubmissionId } : {}),
       target: {
         kind: 'conversation',
         ...(target.replyToMessageId ? { replyToMessageId: target.replyToMessageId.trim() } : {}),
@@ -121,6 +129,7 @@ export const parseCreateConversationMessageRequest = (
     }
 
     return {
+      ...(normalizedSubmissionId ? { submissionId: normalizedSubmissionId } : {}),
       target: {
         kind: 'thread',
         threadId: target.threadId.trim(),

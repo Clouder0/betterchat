@@ -142,7 +142,7 @@ export const createBetterChatRealtimeController = ({
 			return;
 		}
 
-		if (!watchingDirectory || watchedDirectoryVersion !== desiredDirectoryVersion) {
+		if (!watchingDirectory) {
 			sendCommand(socket, {
 				type: 'watch-directory',
 				...(desiredDirectoryVersion ? { directoryVersion: desiredDirectoryVersion } : {}),
@@ -165,7 +165,7 @@ export const createBetterChatRealtimeController = ({
 
 		for (const [roomId, room] of desiredRooms) {
 			const roomVersionHint = serializeRoomVersionHint(room);
-			if (watchedRoomVersions.get(roomId) === roomVersionHint) {
+			if (watchedRoomVersions.has(roomId)) {
 				continue;
 			}
 

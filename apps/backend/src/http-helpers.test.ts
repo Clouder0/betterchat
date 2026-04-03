@@ -97,6 +97,7 @@ describe('parseImageUploadForm', () => {
 describe('conversation request parsing', () => {
   test('normalizes conversation-target message creation requests', () => {
     expect(parseCreateConversationMessageRequest({
+      submissionId: '  submission-1  ',
       target: {
         kind: 'conversation',
         replyToMessageId: '  message-1  ',
@@ -106,6 +107,7 @@ describe('conversation request parsing', () => {
         text: '  hello world  ',
       },
     })).toEqual({
+      submissionId: 'submission-1',
       target: {
         kind: 'conversation',
         replyToMessageId: 'message-1',
@@ -119,6 +121,7 @@ describe('conversation request parsing', () => {
 
   test('normalizes thread-target message creation requests', () => {
     expect(parseCreateConversationMessageRequest({
+      submissionId: '  submission-2  ',
       target: {
         kind: 'thread',
         threadId: '  thread-1  ',
@@ -129,6 +132,7 @@ describe('conversation request parsing', () => {
         text: '  threaded reply  ',
       },
     })).toEqual({
+      submissionId: 'submission-2',
       target: {
         kind: 'thread',
         threadId: 'thread-1',
@@ -139,6 +143,21 @@ describe('conversation request parsing', () => {
         text: 'threaded reply',
       },
     });
+  });
+
+  test('rejects blank submission ids when provided', () => {
+    expect(() =>
+      parseCreateConversationMessageRequest({
+        submissionId: '   ',
+        target: {
+          kind: 'conversation',
+        },
+        content: {
+          format: 'markdown',
+          text: 'hello',
+        },
+      }),
+    ).toThrow(new AppError('VALIDATION_ERROR', '"submissionId" must be a non-empty string when provided', 400));
   });
 
   test('rejects unsupported membership command shapes', () => {

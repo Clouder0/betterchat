@@ -75,6 +75,15 @@
 	background: color-mix(in srgb, var(--surface-panel-soft) 82%, transparent);
 }
 
+.composeContext[data-mode='edit'] {
+	border-color: color-mix(in srgb, #d97706 28%, var(--border-soft));
+	background: color-mix(in srgb, #d97706 6%, var(--surface-panel-soft));
+}
+
+.composeContext[data-mode='edit'] .composeContextLabel {
+	color: #b45309;
+}
+
 .composeContextCopy {
 	display: flex;
 	flex-direction: column;

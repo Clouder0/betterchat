@@ -257,6 +257,7 @@ export type ConversationMessageActions = {
 
 export type ConversationMessage = {
   id: string;
+  submissionId?: string;
   conversationId: string;
   authoredAt: string;
   updatedAt?: string;
@@ -337,6 +338,7 @@ export type MembershipCommandResponse = {
 };
 
 export type CreateConversationMessageRequest = {
+  submissionId?: string;
   target:
     | {
         kind: 'conversation';

@@ -79,6 +79,28 @@ describe('fixtureBetterChatService', () => {
 		expect(timeline.messages.at(-1)?.id).toBe(response.message.id);
 	});
 
+	it('reuses submission ids for canonical fixture text sends so optimistic reconciliation stays deterministic', async () => {
+		await fixtureBetterChatService.login(fixtureLogin);
+
+		const response = await fixtureBetterChatService.createConversationMessage('ops-handoff', {
+			submissionId: 'submission-fixture-1',
+			target: {
+				kind: 'conversation',
+			},
+			content: {
+				format: 'markdown',
+				text: 'submission fixture',
+			},
+		});
+
+		expect(response.message.id).toBe('submission-fixture-1');
+		expect(response.message.submissionId).toBe('submission-fixture-1');
+
+		const timeline = await fixtureBetterChatService.conversationTimeline('ops-handoff');
+		expect(timeline.messages.at(-1)?.id).toBe('submission-fixture-1');
+		expect(timeline.messages.at(-1)?.submissionId).toBe('submission-fixture-1');
+	});
+
 	it('applies membership commands against canonical inbox state', async () => {
 		await fixtureBetterChatService.login(fixtureLogin);
 
@@ -209,6 +231,98 @@ describe('fixtureBetterChatService', () => {
 			query: '',
 		});
 		expect(directCandidates.entries.some((entry) => entry.kind === 'special')).toBe(false);
+	});
+
+	it('edits own message text and marks state as edited', async () => {
+		await fixtureBetterChatService.login(fixtureLogin);
+
+		const created = await fixtureBetterChatService.createConversationMessage('ops-handoff', {
+			target: { kind: 'conversation' },
+			content: { format: 'markdown', text: '原始消息' },
+		});
+
+		const updated = await fixtureBetterChatService.updateMessage('ops-handoff', created.message.id, {
+			text: '编辑后的消息',
+		});
+
+		expect(updated.message.content.text).toBe('编辑后的消息');
+		expect(updated.message.state.edited).toBe(true);
+		expect(updated.message.updatedAt).toBeTruthy();
+		expect(updated.sync.timelineVersion).toStartWith('fixture-');
+
+		const timeline = await fixtureBetterChatService.conversationTimeline('ops-handoff');
+		const editedMessage = timeline.messages.find((m) => m.id === created.message.id);
+		expect(editedMessage?.content.text).toBe('编辑后的消息');
+		expect(editedMessage?.state.edited).toBe(true);
+	});
+
+	it('rejects editing a non-existent message', async () => {
+		await fixtureBetterChatService.login(fixtureLogin);
+
+		await expect(
+			fixtureBetterChatService.updateMessage('ops-handoff', 'nonexistent-msg', { text: '不存在' }),
+		).rejects.toEqual(expect.objectContaining({ code: 'NOT_FOUND' }));
+	});
+
+	it('rejects editing with empty text', async () => {
+		await fixtureBetterChatService.login(fixtureLogin);
+
+		const created = await fixtureBetterChatService.createConversationMessage('ops-handoff', {
+			target: { kind: 'conversation' },
+			content: { format: 'markdown', text: '原始消息' },
+		});
+
+		await expect(
+			fixtureBetterChatService.updateMessage('ops-handoff', created.message.id, { text: '   ' }),
+		).rejects.toEqual(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
+	});
+
+	it('deletes own message and marks state as deleted', async () => {
+		await fixtureBetterChatService.login(fixtureLogin);
+
+		const created = await fixtureBetterChatService.createConversationMessage('ops-handoff', {
+			target: { kind: 'conversation' },
+			content: { format: 'markdown', text: '待删消息' },
+		});
+
+		const deleted = await fixtureBetterChatService.deleteMessage('ops-handoff', created.message.id);
+
+		expect(deleted.messageId).toBe(created.message.id);
+		expect(deleted.sync.timelineVersion).toStartWith('fixture-');
+
+		const timeline = await fixtureBetterChatService.conversationTimeline('ops-handoff');
+		const deletedMessage = timeline.messages.find((m) => m.id === created.message.id);
+		expect(deletedMessage?.state.deleted).toBe(true);
+		expect(deletedMessage?.content.text).toBe('');
+	});
+
+	it('rejects deleting a non-existent message', async () => {
+		await fixtureBetterChatService.login(fixtureLogin);
+
+		await expect(
+			fixtureBetterChatService.deleteMessage('ops-handoff', 'nonexistent-msg'),
+		).rejects.toEqual(expect.objectContaining({ code: 'NOT_FOUND' }));
+	});
+
+	it('stamps actions on own messages as editable and deletable', async () => {
+		await fixtureBetterChatService.login(fixtureLogin);
+
+		const created = await fixtureBetterChatService.createConversationMessage('ops-handoff', {
+			target: { kind: 'conversation' },
+			content: { format: 'markdown', text: 'action test' },
+		});
+
+		expect(created.message.actions).toEqual({ edit: true, delete: true });
+
+		const timeline = await fixtureBetterChatService.conversationTimeline('ops-handoff');
+		const ownMessage = timeline.messages.find((m) => m.id === created.message.id);
+		expect(ownMessage?.actions).toEqual({ edit: true, delete: true });
+
+		// Other users' messages should not be editable/deletable
+		const otherMessage = timeline.messages.find((m) => m.author.id !== 'user-linche');
+		if (otherMessage) {
+			expect(otherMessage.actions).toEqual({ edit: false, delete: false });
+		}
 	});
 });
 

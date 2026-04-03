@@ -1,15 +1,17 @@
 import type { ConversationStreamClientCommand, ConversationStreamServerEvent, PresenceState } from '@betterchat/contracts';
 
 import type { BetterChatConfig } from './config';
+import { sortDirectoryEntries } from './conversation-domain';
 import { AppError, responseFromAppError, toAppError } from './errors';
 import { presenceStateFromStatus } from './presence';
 import { RealtimeRefreshState } from './realtime-refresh-state';
+import { sameUserStreamRefreshCoalescer } from './stream-refresh-coalescing';
 import { realtimeSessionRegistry } from './realtime-session-registry';
 import { RealtimeWatchState } from './realtime-watch-state';
 import { getSessionFromRequest } from './session-auth';
 import { sessionKeyFrom, type UpstreamSession } from './session';
 import { computeSnapshotVersion } from './snapshot-version';
-import { createSnapshotReadScope, createSnapshotService, type SnapshotService } from './snapshot-service';
+import { createSnapshotService, type SnapshotService } from './snapshot-service';
 import { type UpstreamPresenceChange, type UpstreamRealtimeCallbacks, UpstreamRealtimeBridge } from './upstream-realtime';
 import { RocketChatClient } from './upstream';
 
@@ -57,10 +59,12 @@ type ThreadVersionHint = {
 };
 
 type StreamRefreshOptions = {
+  conversationId?: string;
   forceResync?: boolean;
 };
 
 type DirectorySnapshotState = Awaited<ReturnType<SnapshotService['directoryState']>>;
+type DirectoryEntryRefreshState = Awaited<ReturnType<SnapshotService['refreshDirectoryEntryState']>>;
 type DirectoryEntry = DirectorySnapshotState['snapshot']['entries'][number];
 type RememberedDirectoryState = {
   counterpartUserIdByConversationId: Map<string, string>;
@@ -181,10 +185,11 @@ export class ConversationStreamConnection {
           return;
         }
 
+        const alreadyWatchingDirectory = this.watchingDirectory;
         this.watchingDirectory = true;
         void this.handleWatchDirectory({
           directoryVersion: command.directoryVersion?.trim(),
-        });
+        }, alreadyWatchingDirectory);
         return;
       }
 
@@ -217,12 +222,13 @@ export class ConversationStreamConnection {
         }
 
         const conversationId = command.conversationId.trim();
+        const alreadyWatchingConversation = this.watchState.hasRoom(conversationId);
         this.watchState.watchRoom(conversationId);
         this.syncConversationWatch(conversationId);
         void this.handleWatchConversation(conversationId, {
           conversationVersion: command.conversationVersion?.trim(),
           timelineVersion: command.timelineVersion?.trim(),
-        });
+        }, alreadyWatchingConversation);
         return;
       }
 
@@ -258,11 +264,12 @@ export class ConversationStreamConnection {
 
         const conversationId = command.conversationId.trim();
         const threadId = command.threadId.trim();
+        const alreadyWatchingThread = this.watchState.threadRoomId(threadId) === conversationId;
         this.watchState.watchThread(conversationId, threadId);
         this.syncConversationWatch(conversationId);
         void this.handleWatchThread(conversationId, threadId, {
           threadVersion: command.threadVersion?.trim(),
-        });
+        }, alreadyWatchingThread);
         return;
       }
 
@@ -666,12 +673,69 @@ export class ConversationStreamConnection {
     });
   }
 
-  private async handleWatchDirectory(versionHint: DirectoryVersionHint): Promise<void> {
+  private directoryWatchAlreadyCurrent(versionHint: DirectoryVersionHint, alreadyWatchingDirectory: boolean): boolean {
+    return alreadyWatchingDirectory
+      && versionHint.directoryVersion !== undefined
+      && this.lastEventSignatureByKey.get('directory') === versionHint.directoryVersion;
+  }
+
+  private conversationWatchAlreadyCurrent(
+    conversationId: string,
+    versionHint: ConversationVersionHint,
+    alreadyWatchingConversation: boolean,
+  ): boolean {
+    return alreadyWatchingConversation
+      && versionHint.conversationVersion !== undefined
+      && versionHint.timelineVersion !== undefined
+      && this.lastEventSignatureByKey.get(`conversation:${conversationId}`) === versionHint.conversationVersion
+      && this.lastEventSignatureByKey.get(`timeline:${conversationId}`) === versionHint.timelineVersion;
+  }
+
+  private threadWatchAlreadyCurrent(
+    threadId: string,
+    versionHint: ThreadVersionHint,
+    alreadyWatchingThread: boolean,
+  ): boolean {
+    return alreadyWatchingThread
+      && versionHint.threadVersion !== undefined
+      && this.lastEventSignatureByKey.get(`thread:${threadId}`) === versionHint.threadVersion;
+  }
+
+  private sameUserRefresh<T>(scope: string, load: () => Promise<T>): Promise<T> {
+    return sameUserStreamRefreshCoalescer.run(this.session.userId, scope, load);
+  }
+
+  private refreshDirectoryStateForUser(): Promise<DirectorySnapshotState> {
+    return this.sameUserRefresh('directory', () => this.snapshotService.refreshDirectoryState(this.session));
+  }
+
+  private refreshDirectoryEntryStateForUser(conversationId: string): Promise<DirectoryEntryRefreshState> {
+    return this.sameUserRefresh(`directory-entry:${conversationId}`, () =>
+      this.snapshotService.refreshDirectoryEntryState(this.session, conversationId)
+    );
+  }
+
+  private refreshConversationStateWithTimelineForUser(conversationId: string) {
+    return this.sameUserRefresh(`conversation:${conversationId}`, () =>
+      this.snapshotService.refreshConversationStateWithTimeline(this.session, conversationId)
+    );
+  }
+
+  private refreshThreadConversationTimelineForUser(conversationId: string, threadId: string) {
+    return this.sameUserRefresh(`conversation:${conversationId}:thread:${threadId}`, () =>
+      this.snapshotService.refreshThreadConversationTimeline(this.session, conversationId, threadId)
+    );
+  }
+
+  private async handleWatchDirectory(versionHint: DirectoryVersionHint, alreadyWatchingDirectory = false): Promise<void> {
+    if (this.directoryWatchAlreadyCurrent(versionHint, alreadyWatchingDirectory)) {
+      return;
+    }
+
     const refreshId = this.beginDirectoryRefresh();
 
     try {
-      this.snapshotService.invalidateDirectory(this.session);
-      const directoryState = await this.snapshotService.directoryState(this.session);
+      const directoryState = await this.refreshDirectoryStateForUser();
       if (!this.isCurrentDirectoryRefresh(refreshId)) {
         return;
       }
@@ -709,8 +773,18 @@ export class ConversationStreamConnection {
         return;
       }
 
-      this.snapshotService.invalidateDirectory(this.session);
-      const directoryState = await this.snapshotService.directoryState(this.session);
+      if (!options.forceResync && options.conversationId && this.hasRememberedDirectorySnapshot()) {
+        const directoryEntryState = await this.refreshDirectoryEntryStateForUser(options.conversationId);
+        if (!this.isCurrentDirectoryRefresh(refreshId)) {
+          return;
+        }
+
+        this.markUpstreamHealthy();
+        this.emitDirectoryEntryDeltaForConversation(options.conversationId, directoryEntryState);
+        return;
+      }
+
+      const directoryState = await this.refreshDirectoryStateForUser();
       if (!this.isCurrentDirectoryRefresh(refreshId)) {
         return;
       }
@@ -811,6 +885,57 @@ export class ConversationStreamConnection {
     }
   }
 
+  private emitDirectoryEntryDeltaForConversation(
+    conversationId: string,
+    directoryEntryState: DirectoryEntryRefreshState,
+  ): void {
+    const previousState = this.rememberedDirectoryState;
+    if (!previousState) {
+      return;
+    }
+
+    const nextCounterpartUserIdByConversationId = new Map(previousState.counterpartUserIdByConversationId);
+    const nextEntryByConversationId = new Map(previousState.entryByConversationId);
+    const nextEntry = directoryEntryState.entry;
+
+    if (nextEntry) {
+      nextEntryByConversationId.set(conversationId, nextEntry);
+    } else {
+      nextEntryByConversationId.delete(conversationId);
+    }
+
+    const nextCounterpartUserId = directoryEntryState.counterpartUserIdByConversationId.get(conversationId);
+    if (nextCounterpartUserId) {
+      nextCounterpartUserIdByConversationId.set(conversationId, nextCounterpartUserId);
+    } else {
+      nextCounterpartUserIdByConversationId.delete(conversationId);
+    }
+
+    const sortedEntries = sortDirectoryEntries(nextEntryByConversationId.values());
+    const version = computeSnapshotVersion({ entries: sortedEntries });
+    const previousEntry = previousState.entryByConversationId.get(conversationId);
+    const entryChanged = JSON.stringify(previousEntry) !== JSON.stringify(nextEntry);
+
+    this.lastEventSignatureByKey.set('directory', version);
+    this.rememberedDirectoryState = {
+      counterpartUserIdByConversationId: nextCounterpartUserIdByConversationId,
+      entryByConversationId: new Map(sortedEntries.map((entry) => [entry.conversation.id, entry])),
+      version,
+    };
+    this.syncDirectoryPresenceTargets(nextCounterpartUserIdByConversationId);
+
+    if (!entryChanged) {
+      return;
+    }
+
+    if (!nextEntry) {
+      this.emitDirectoryEntryRemove(version, conversationId);
+      return;
+    }
+
+    this.emitDirectoryEntryUpsert(version, nextEntry);
+  }
+
   private emitDirectoryDelta(directoryState: DirectorySnapshotState): void {
     const previousState = this.rememberedDirectoryState;
     if (!previousState) {
@@ -844,7 +969,15 @@ export class ConversationStreamConnection {
     this.rememberDirectoryState(directoryState);
   }
 
-  private async handleWatchConversation(conversationId: string, versionHint: ConversationVersionHint): Promise<void> {
+  private async handleWatchConversation(
+    conversationId: string,
+    versionHint: ConversationVersionHint,
+    alreadyWatchingConversation = false,
+  ): Promise<void> {
+    if (this.conversationWatchAlreadyCurrent(conversationId, versionHint, alreadyWatchingConversation)) {
+      return;
+    }
+
     const refreshId = this.beginConversationRefresh(conversationId);
 
     try {
@@ -853,12 +986,7 @@ export class ConversationStreamConnection {
         return;
       }
 
-      this.snapshotService.invalidateConversation(this.session, conversationId);
-      const scope = createSnapshotReadScope();
-      const [conversationState, timeline] = await Promise.all([
-        this.snapshotService.conversationState(this.session, conversationId, scope),
-        this.snapshotService.conversationTimeline(this.session, conversationId, undefined, scope),
-      ]);
+      const { conversationState, timeline } = await this.refreshConversationStateWithTimelineForUser(conversationId);
 
       if (!this.isCurrentConversationRefresh(conversationId, refreshId)) {
         return;
@@ -891,7 +1019,16 @@ export class ConversationStreamConnection {
     }
   }
 
-  private async handleWatchThread(conversationId: string, threadId: string, versionHint: ThreadVersionHint): Promise<void> {
+  private async handleWatchThread(
+    conversationId: string,
+    threadId: string,
+    versionHint: ThreadVersionHint,
+    alreadyWatchingThread = false,
+  ): Promise<void> {
+    if (this.threadWatchAlreadyCurrent(threadId, versionHint, alreadyWatchingThread)) {
+      return;
+    }
+
     const refreshId = this.beginThreadRefresh(threadId);
 
     try {
@@ -900,8 +1037,7 @@ export class ConversationStreamConnection {
         return;
       }
 
-      this.snapshotService.invalidateThread(this.session, conversationId, threadId);
-      const thread = await this.snapshotService.threadConversationTimeline(this.session, conversationId, threadId);
+      const thread = await this.refreshThreadConversationTimelineForUser(conversationId, threadId);
       if (!this.isCurrentThreadRefresh(conversationId, threadId, refreshId)) {
         return;
       }
@@ -1002,12 +1138,7 @@ export class ConversationStreamConnection {
         return;
       }
 
-      this.snapshotService.invalidateConversation(this.session, conversationId);
-      const scope = createSnapshotReadScope();
-      const [conversationState, timeline] = await Promise.all([
-        this.snapshotService.conversationState(this.session, conversationId, scope),
-        this.snapshotService.conversationTimeline(this.session, conversationId, undefined, scope),
-      ]);
+      const { conversationState, timeline } = await this.refreshConversationStateWithTimelineForUser(conversationId);
       if (!this.isCurrentConversationRefresh(conversationId, refreshId)) {
         return;
       }
@@ -1045,12 +1176,7 @@ export class ConversationStreamConnection {
         return;
       }
 
-      this.snapshotService.invalidateConversation(this.session, conversationId);
-      const scope = createSnapshotReadScope();
-      const [conversationState, timeline] = await Promise.all([
-        this.snapshotService.conversationState(this.session, conversationId, scope),
-        this.snapshotService.conversationTimeline(this.session, conversationId, undefined, scope),
-      ]);
+      const { conversationState, timeline } = await this.refreshConversationStateWithTimelineForUser(conversationId);
 
       if (!this.isCurrentConversationRefresh(conversationId, refreshId)) {
         return;
@@ -1090,8 +1216,7 @@ export class ConversationStreamConnection {
         return;
       }
 
-      this.snapshotService.invalidateThread(this.session, conversationId, threadId);
-      const thread = await this.snapshotService.threadConversationTimeline(this.session, conversationId, threadId);
+      const thread = await this.refreshThreadConversationTimelineForUser(conversationId, threadId);
       if (!this.isCurrentThreadRefresh(conversationId, threadId, refreshId)) {
         return;
       }

@@ -615,6 +615,8 @@ export const TimelineView = ({
 	onNavigateSidebar,
 	onRetryFailedMessage,
 	onReplyMessage,
+	onEditMessage,
+	onDeleteMessage,
 	roomMentioned = false,
 	timeline,
 }: {
@@ -651,6 +653,8 @@ export const TimelineView = ({
 	onNavigateSidebar?: () => boolean | void;
 	onRetryFailedMessage?: (messageId: string) => void;
 	onReplyMessage?: (message: TimelineMessage) => void;
+	onEditMessage?: (message: TimelineMessage) => void;
+	onDeleteMessage?: (message: TimelineMessage) => void;
 	roomMentioned?: boolean;
 	timeline: RoomTimelineSnapshot;
 }) => {
@@ -721,6 +725,7 @@ export const TimelineView = ({
 	const appendedMessageExpansionDefaultsRef = useRef<Record<string, boolean>>({});
 	const loadedExpansionRoomIdRef = useRef(timeline.roomId);
 	const expandedMessagesRef = useRef(expandedMessages);
+	const expansionToggleSnapshotRef = useRef<UnsavedRoomViewportSnapshot | null>(null);
 	const lastReadRequestAnchorRef = useRef<string | null>(null);
 	const pendingUnreadDividerSettleAnchorRef = useRef<string | null>(null);
 	const lastLiveUnreadDividerRef = useRef<TimelineUnreadDividerSnapshot | null>(null);
@@ -1487,6 +1492,7 @@ export const TimelineView = ({
 				nextExpandedMessages[messageId] = nextExpanded;
 			}
 
+			expansionToggleSnapshotRef.current = captureViewportSnapshot() ?? currentViewportSnapshotRef.current;
 			commitExpandedMessages(nextExpandedMessages, {
 				[messageId]: nextExpanded ?? null,
 			});
@@ -3359,6 +3365,22 @@ export const TimelineView = ({
 			});
 		}
 
+		if (activeContextMenuMessage.actions?.edit && onEditMessage) {
+			items.push({
+				key: 'edit',
+				label: '编辑',
+				onSelect: () => onEditMessage(activeContextMenuMessage),
+			});
+		}
+
+		if (activeContextMenuMessage.actions?.delete && onDeleteMessage) {
+			items.push({
+				key: 'delete',
+				label: '删除',
+				onSelect: () => onDeleteMessage(activeContextMenuMessage),
+			});
+		}
+
 		if (items.length > 0) {
 			items.push({ key: 'divider-primary', kind: 'divider' });
 		}
@@ -3403,6 +3425,8 @@ export const TimelineView = ({
 		copyMessagePlainText,
 		jumpToOriginalMessage,
 		localOutgoingMessageIds,
+		onDeleteMessage,
+		onEditMessage,
 		onForwardMessage,
 		onReplyMessage,
 		toggleMessageExpanded,
@@ -3944,7 +3968,11 @@ export const TimelineView = ({
 				}
 
 				if (hasChanges) {
-					if (shouldPreserveBottom) {
+					const toggleSnapshot = expansionToggleSnapshotRef.current;
+					if (toggleSnapshot) {
+						expansionToggleSnapshotRef.current = null;
+						scheduleContentResizeAdjustment('anchor', toggleSnapshot);
+					} else if (shouldPreserveBottom) {
 						scheduleContentResizeAdjustment('bottom', viewportSnapshot);
 					} else if (!shouldSuspendAnchorPreservationDuringProgrammaticScroll && viewportSnapshot) {
 						scheduleContentResizeAdjustment('anchor', viewportSnapshot);

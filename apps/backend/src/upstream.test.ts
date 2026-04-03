@@ -56,6 +56,8 @@ const readRequestBody = async (request: IncomingMessage): Promise<string> => {
   return Buffer.concat(chunks).toString('utf8');
 };
 
+const delay = (timeoutMs: number) => new Promise<void>((resolve) => setTimeout(resolve, timeoutMs));
+
 describe('RocketChat upstream transport', () => {
   const session: UpstreamSession = {
     authToken: 'auth-token',
@@ -329,6 +331,196 @@ describe('RocketChat upstream transport', () => {
     });
   });
 
+  test('reuses short-lived session and public metadata reads within the cache TTL', async () => {
+    const requestCountByPath = new Map<string, number>();
+
+    const server = await listen((request, response) => {
+      const path = request.url ?? '';
+      requestCountByPath.set(path, (requestCountByPath.get(path) ?? 0) + 1);
+      response.statusCode = 200;
+      response.setHeader('content-type', 'application/json');
+
+      if (path === '/api/v1/me') {
+        response.end(JSON.stringify({
+          success: true,
+          _id: 'alice-id',
+          username: 'alice',
+          name: 'Alice Example',
+          roles: ['user'],
+        }));
+        return;
+      }
+
+      if (path === '/api/v1/permissions.listAll') {
+        response.end(JSON.stringify({
+          success: true,
+          update: [{ _id: 'view-room-administration', roles: ['admin'] }],
+          remove: [],
+        }));
+        return;
+      }
+
+      if (path.startsWith('/api/v1/settings.public?')) {
+        response.end(JSON.stringify({
+          success: true,
+          settings: [
+            { _id: 'Message_AllowDeleting', value: true },
+            { _id: 'Threads_enabled', value: true },
+          ],
+        }));
+        return;
+      }
+
+      response.statusCode = 404;
+      response.end(JSON.stringify({ success: false, error: 'not found' }));
+    });
+    const client = new RocketChatClient(server.url, {
+      metadataCacheTtlMs: 1_000,
+    });
+
+    await client.getMe(session);
+    await client.getMe(session);
+    await client.getPermissionDefinitions(session);
+    await client.getPermissionDefinitions(session);
+    await client.getPublicSettings(['Threads_enabled', 'Message_AllowDeleting']);
+    await client.getPublicSettings(['Message_AllowDeleting', 'Threads_enabled']);
+
+    expect(requestCountByPath.get('/api/v1/me')).toBe(1);
+    expect(requestCountByPath.get('/api/v1/permissions.listAll')).toBe(1);
+    expect(
+      [...requestCountByPath.entries()].find(([path]) => path.startsWith('/api/v1/settings.public?')),
+    ).toEqual([
+      expect.stringContaining('/api/v1/settings.public?'),
+      1,
+    ]);
+  });
+
+  test('refreshes short-lived metadata after the cache TTL expires', async () => {
+    const requestCountByPath = new Map<string, number>();
+
+    const server = await listen((request, response) => {
+      const path = request.url ?? '';
+      requestCountByPath.set(path, (requestCountByPath.get(path) ?? 0) + 1);
+      response.statusCode = 200;
+      response.setHeader('content-type', 'application/json');
+
+      if (path === '/api/v1/permissions.listAll') {
+        response.end(JSON.stringify({
+          success: true,
+          update: [{ _id: 'view-room-administration', roles: ['admin'] }],
+          remove: [],
+        }));
+        return;
+      }
+
+      response.statusCode = 404;
+      response.end(JSON.stringify({ success: false, error: 'not found' }));
+    });
+    const client = new RocketChatClient(server.url, {
+      metadataCacheTtlMs: 10,
+    });
+
+    await client.getPermissionDefinitions(session);
+    await delay(25);
+    await client.getPermissionDefinitions(session);
+
+    expect(requestCountByPath.get('/api/v1/permissions.listAll')).toBe(2);
+  });
+
+  test('reuses stable metadata across distinct session tokens when the scope is global or the user identity matches', async () => {
+    const requestCountByPath = new Map<string, number>();
+    const secondSession: UpstreamSession = {
+      ...session,
+      authToken: 'auth-token-2',
+    };
+
+    const server = await listen((request, response) => {
+      const path = request.url ?? '';
+      requestCountByPath.set(path, (requestCountByPath.get(path) ?? 0) + 1);
+      response.statusCode = 200;
+      response.setHeader('content-type', 'application/json');
+
+      if (path === '/api/v1/me') {
+        response.end(JSON.stringify({
+          success: true,
+          _id: 'alice-id',
+          username: 'alice',
+          name: 'Alice Example',
+          roles: ['user'],
+        }));
+        return;
+      }
+
+      if (path === '/api/v1/permissions.listAll') {
+        response.end(JSON.stringify({
+          success: true,
+          update: [{ _id: 'view-room-administration', roles: ['admin'] }],
+          remove: [],
+        }));
+        return;
+      }
+
+      response.statusCode = 404;
+      response.end(JSON.stringify({ success: false, error: 'not found' }));
+    });
+    const client = new RocketChatClient(server.url, {
+      metadataCacheTtlMs: 1_000,
+    });
+
+    await client.getMe(session);
+    await client.getMe(secondSession);
+    await client.getPermissionDefinitions(session);
+    await client.getPermissionDefinitions(secondSession);
+
+    expect(requestCountByPath.get('/api/v1/me')).toBe(1);
+    expect(requestCountByPath.get('/api/v1/permissions.listAll')).toBe(1);
+  });
+
+  test('does not reuse user-scoped metadata across different users', async () => {
+    const requestCountByPath = new Map<string, number>();
+    const otherUserSession: UpstreamSession = {
+      ...session,
+      authToken: 'other-auth-token',
+      userId: 'bob-id',
+      username: 'bob',
+      displayName: 'Bob Example',
+    };
+
+    const server = await listen((request, response) => {
+      const path = request.url ?? '';
+      requestCountByPath.set(path, (requestCountByPath.get(path) ?? 0) + 1);
+      response.statusCode = 200;
+      response.setHeader('content-type', 'application/json');
+
+      if (path === '/api/v1/me') {
+        const userId = firstHeaderValue(request.headers['x-user-id']);
+        response.end(JSON.stringify({
+          success: true,
+          _id: userId,
+          username: userId === 'alice-id' ? 'alice' : 'bob',
+          name: userId === 'alice-id' ? 'Alice Example' : 'Bob Example',
+          roles: ['user'],
+        }));
+        return;
+      }
+
+      response.statusCode = 404;
+      response.end(JSON.stringify({ success: false, error: 'not found' }));
+    });
+    const client = new RocketChatClient(server.url, {
+      metadataCacheTtlMs: 1_000,
+    });
+
+    const [alice, bob] = await Promise.all([
+      client.getMe(session),
+      client.getMe(otherUserSession),
+    ]);
+
+    expect(alice._id).toBe('alice-id');
+    expect(bob._id).toBe('bob-id');
+    expect(requestCountByPath.get('/api/v1/me')).toBe(2);
+  });
+
   test('serializes room sends with quote placeholders on the public send path', async () => {
     let requestBody: unknown;
 
@@ -356,6 +548,7 @@ describe('RocketChat upstream transport', () => {
     const client = new RocketChatClient(server.url);
 
     await client.sendRoomMessage(session, {
+      messageId: 'submission-1',
       roomId: 'room-1',
       text: 'hello',
       quoteMessageLink: 'http://127.0.0.1:3100/channel/general?msg=parent-1',
@@ -363,6 +556,7 @@ describe('RocketChat upstream transport', () => {
 
     expect(requestBody).toEqual({
       message: {
+        _id: 'submission-1',
         rid: 'room-1',
         msg: '[ ](http://127.0.0.1:3100/channel/general?msg=parent-1)\nhello',
       },
@@ -397,12 +591,14 @@ describe('RocketChat upstream transport', () => {
     const client = new RocketChatClient(server.url);
 
     await client.sendThreadMessage(session, {
+      messageId: 'submission-thread-1',
       roomId: 'room-1',
       threadId: 'thread-1',
       text: 'thread only',
       broadcastToRoom: false,
     });
     await client.sendThreadMessage(session, {
+      messageId: 'submission-thread-2',
       roomId: 'room-1',
       threadId: 'thread-1',
       text: 'broadcast',
@@ -412,6 +608,7 @@ describe('RocketChat upstream transport', () => {
     expect(requestBodies).toEqual([
       {
         message: {
+          _id: 'submission-thread-1',
           rid: 'room-1',
           msg: 'thread only',
           tmid: 'thread-1',
@@ -419,6 +616,7 @@ describe('RocketChat upstream transport', () => {
       },
       {
         message: {
+          _id: 'submission-thread-2',
           rid: 'room-1',
           msg: 'broadcast',
           tmid: 'thread-1',

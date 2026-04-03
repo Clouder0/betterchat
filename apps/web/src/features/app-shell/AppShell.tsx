@@ -24,6 +24,7 @@ import { preloadLiveMarkdownEditor } from '@/features/composer/loadLiveMarkdownE
 import { toMentionInteractionUsers } from '@/features/composer/mentions';
 import { loadComposerSendShortcut, saveComposerSendShortcut } from '@/features/composer/sendShortcutPreference';
 import { ForwardMessageDialog } from '@/features/messages/ForwardMessageDialog';
+import { DeleteMessageDialog } from '@/features/messages/DeleteMessageDialog';
 import { buildForwardedMessageMarkdown, createReplyPreviewFromMessage } from '@/features/messages/messageCompose';
 import { SettingsPanel } from '@/features/settings/SettingsPanel';
 import { TimelineView } from '@/features/timeline/TimelineView';
@@ -53,6 +54,7 @@ import type {
 } from '@/lib/chatModels';
 import { spaceText } from '@/lib/text';
 
+import { reconcileSubmissionTimeline, timelineMessagesShareIdentity } from './submissionReconciliation';
 import {
 	applyFavoriteOverrides,
 	loadFavoriteOverrides,
@@ -287,6 +289,9 @@ type ForwardToastState = {
 	roomTitle: string;
 };
 type KeyboardFocusRegionUpdater = KeyboardFocusRegion | ((currentRegion: KeyboardFocusRegion) => KeyboardFocusRegion);
+const emptyMessageDeliveryStates: Record<string, MessageDeliveryState> = {};
+const emptyFailedMessageActions: Record<string, { errorMessage?: string }> = {};
+const emptyLocalOutgoingMessageIds = new Set<string>();
 
 const normalizeIdentityValue = (value: string) => value.trim().replace(/^@/, '').replace(/[\s._-]+/g, '').toLowerCase();
 const resolveDeliveryErrorMessage = (error: unknown) => (error instanceof Error && error.message.trim() ? error.message.trim() : '发送失败，请重试。');
@@ -326,7 +331,7 @@ const RoomInfoGlyph = () => (
 	</svg>
 );
 
-const createOptimisticMessageId = (roomId: string) => `${roomId}-optimistic-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const createSubmissionId = (roomId: string) => `${roomId}-submission-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 const createLocalMessageSendKey = (roomId: string, messageId: string) => `${roomId}:${messageId}`;
 const createOptimisticImageAttachment = ({
 	fileName,
@@ -361,15 +366,18 @@ const createOptimisticTimelineMessage = ({
 	currentUser,
 	roomId,
 	replyTo,
+	submissionId,
 	text,
 }: {
 	attachments?: TimelineAttachment[];
 	currentUser: SessionUser;
 	roomId: string;
 	replyTo?: TimelineMessage['replyTo'];
+	submissionId: string;
 	text: string;
 }) => ({
-	id: createOptimisticMessageId(roomId),
+	id: submissionId,
+	submissionId,
 	roomId,
 	createdAt: new Date().toISOString(),
 	author: {
@@ -560,6 +568,15 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const [composerReplyTarget, setComposerReplyTarget] = useState<{
 		preview: NonNullable<TimelineMessage['replyTo']>;
 		sourceMessageId: string;
+	} | null>(null);
+	const [composerEditTarget, setComposerEditTarget] = useState<{
+		messageId: string;
+		roomId: string;
+		originalText: string;
+	} | null>(null);
+	const [deleteDialogSource, setDeleteDialogSource] = useState<{
+		message: TimelineMessage;
+		isSubmitting: boolean;
 	} | null>(null);
 	const [forwardDialogSource, setForwardDialogSource] = useState<{
 		message: TimelineMessage;
@@ -941,7 +958,9 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	useEffect(() => {
 		setRoomInfoOpen(false);
 		setComposerReplyTarget(null);
+		setComposerEditTarget(null);
 		setForwardDialogSource(null);
+		setDeleteDialogSource(null);
 	}, [roomId]);
 
 	useEffect(
@@ -1956,32 +1975,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const userPresence = resolveUserPresence(currentUser?.status);
 	const activeRoomPendingSendCount = roomId ? roomPendingSendCounts[roomId] ?? 0 : 0;
 	const activeRoomLocalMessages = useMemo(() => (roomId ? roomLocalMessages[roomId] ?? [] : []), [roomId, roomLocalMessages]);
-	const activeRoomMessageDeliveryStates = useMemo(
-		() =>
-			Object.fromEntries(activeRoomLocalMessages.map((localMessage) => [localMessage.message.id, localMessage.status])) as Record<
-				string,
-				MessageDeliveryState
-			>,
-		[activeRoomLocalMessages],
-	);
-	const activeRoomFailedMessageActions = useMemo(
-		() =>
-			Object.fromEntries(
-				activeRoomLocalMessages
-					.filter((localMessage) => localMessage.status === 'failed')
-					.map((localMessage) => [
-						localMessage.message.id,
-						{
-							errorMessage: localMessage.errorMessage,
-						},
-					]),
-			) as Record<string, { errorMessage?: string }>,
-		[activeRoomLocalMessages],
-	);
-	const activeRoomLocalOutgoingMessageIds = useMemo(
-		() => new Set(activeRoomLocalMessages.map((localMessage) => localMessage.message.id)),
-		[activeRoomLocalMessages],
-	);
 	const activeRoomOlderHistory = useMemo(() => (roomId ? roomOlderHistory[roomId] : undefined), [roomId, roomOlderHistory]);
 	const activeRoomHasOlderHistory = hasOlderHistory({
 		baseNextCursor: roomTimelineQuery.data?.nextCursor,
@@ -2003,15 +1996,29 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			}),
 		};
 	}, [activeRoomOlderHistory, roomTimelineQuery.data]);
+	const activeRoomSubmissionReconciliation = useMemo(
+		() =>
+			activeRoomBaseTimeline
+				? reconcileSubmissionTimeline({
+						canonicalMessages: activeRoomBaseTimeline.messages,
+						localMessages: activeRoomLocalMessages,
+				  })
+				: undefined,
+		[activeRoomBaseTimeline, activeRoomLocalMessages],
+	);
+	const activeRoomMessageDeliveryStates = activeRoomSubmissionReconciliation?.messageDeliveryStates ?? emptyMessageDeliveryStates;
+	const activeRoomFailedMessageActions = activeRoomSubmissionReconciliation?.failedMessageActions ?? emptyFailedMessageActions;
+	const activeRoomLocalOutgoingMessageIds =
+		activeRoomSubmissionReconciliation?.localOutgoingMessageIds ?? emptyLocalOutgoingMessageIds;
 	const activeRoomTimeline = useMemo(
 		() =>
 			activeRoomBaseTimeline
 				? {
 						...activeRoomBaseTimeline,
-						messages: [...activeRoomBaseTimeline.messages, ...activeRoomLocalMessages.map((localMessage) => localMessage.message)],
+						messages: activeRoomSubmissionReconciliation?.messages ?? activeRoomBaseTimeline.messages,
 				  }
 				: activeRoomBaseTimeline,
-		[activeRoomBaseTimeline, activeRoomLocalMessages],
+		[activeRoomBaseTimeline, activeRoomSubmissionReconciliation],
 	);
 	const prefetchOlderRoomHistoryPage = useCallback(
 		(targetRoomId: string, cursor?: string | null) => {
@@ -2933,8 +2940,35 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			queryClient.setQueryData<RoomTimelineSnapshot | undefined>(
 				betterChatQueryKeys.roomTimeline(targetRoomId),
 				(currentTimeline) => {
-					if (!currentTimeline || currentTimeline.messages.some((currentMessage) => currentMessage.id === message.id)) {
+					if (!currentTimeline) {
 						return currentTimeline;
+					}
+
+					const existingMessageIndex = currentTimeline.messages.findIndex((currentMessage) =>
+						timelineMessagesShareIdentity(currentMessage, message),
+					);
+					if (existingMessageIndex >= 0) {
+						const existingMessage = currentTimeline.messages[existingMessageIndex];
+						if (!existingMessage) {
+							return currentTimeline;
+						}
+						const submissionId = message.submissionId ?? existingMessage.submissionId;
+
+						const mergedMessage: TimelineMessage = {
+							...existingMessage,
+							...message,
+							...(submissionId ? { submissionId } : {}),
+							replyTo: message.replyTo ?? existingMessage.replyTo,
+							thread: message.thread ?? existingMessage.thread,
+							attachments: message.attachments ?? existingMessage.attachments,
+							reactions: message.reactions ?? existingMessage.reactions,
+						};
+						const nextMessages = [...currentTimeline.messages];
+						nextMessages[existingMessageIndex] = mergedMessage;
+						return {
+							...currentTimeline,
+							messages: nextMessages,
+						};
 					}
 
 					return {
@@ -3020,6 +3054,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 
 					if (localMessage.kind === 'text') {
 						const { message } = await betterChatApi.sendMessage(targetRoomId, {
+							submissionId: localMessage.message.submissionId,
 							replyToMessageId: localMessage.payload.replyToMessageId,
 							text: localMessage.payload.text,
 						});
@@ -3100,10 +3135,12 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 				throw new Error('当前会话未就绪，暂时无法发送消息。');
 			}
 
+			const submissionId = createSubmissionId(targetRoomId);
 			const optimisticMessage = createOptimisticTimelineMessage({
 				currentUser,
 				roomId: targetRoomId,
 				replyTo: replyPreview,
+				submissionId,
 				text,
 			});
 
@@ -3149,19 +3186,20 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 
 			const optimisticPreviewUrl = URL.createObjectURL(file);
 			optimisticPreviewUrlsRef.current.add(optimisticPreviewUrl);
-			const optimisticMessageId = createOptimisticMessageId(targetRoomId);
+			const submissionId = createSubmissionId(targetRoomId);
 			const optimisticMessage = createOptimisticTimelineMessage({
 				attachments: [
 					createOptimisticImageAttachment({
 						fileName: file.name,
 						height: imageDimensions?.height,
-						messageId: optimisticMessageId,
+						messageId: submissionId,
 						previewUrl: optimisticPreviewUrl,
 						width: imageDimensions?.width,
 					}),
 				],
 				currentUser,
 				roomId: targetRoomId,
+				submissionId,
 				text,
 			});
 
@@ -3190,6 +3228,37 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		async ({ imageDimensions, imageFile, text }: ComposerSubmitPayload) => {
 			if (!roomId) {
 				throw new Error('当前没有可发送消息的房间。');
+			}
+
+			const activeEditTarget = composerEditTarget;
+			if (activeEditTarget) {
+				try {
+					const { message: updatedMessage } = await betterChatApi.editMessage(
+						activeEditTarget.roomId,
+						activeEditTarget.messageId,
+						{ text },
+					);
+
+					patchRoomTimeline(activeEditTarget.roomId, (timeline) => ({
+						...timeline,
+						messages: timeline.messages.map((m) =>
+							m.id === activeEditTarget.messageId
+								? { ...updatedMessage, actions: m.actions }
+								: m,
+						),
+					}));
+
+					setComposerEditTarget(null);
+					void invalidateRoomSnapshotQueries(activeEditTarget.roomId);
+				} catch (error) {
+					const errorHandler = createMutationErrorHandler<unknown, unknown>({
+						showToast: showErrorToast,
+						queryClient,
+					});
+					errorHandler.onError(error, undefined, undefined);
+					throw error;
+				}
+				return;
 			}
 
 			const activeReplyTarget = composerReplyTarget;
@@ -3226,11 +3295,12 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 				throw error;
 			}
 		},
-		[composerReplyTarget, enqueueRoomImage, enqueueRoomMessage, roomId],
+		[composerEditTarget, composerReplyTarget, enqueueRoomImage, enqueueRoomMessage, invalidateRoomSnapshotQueries, patchRoomTimeline, queryClient, roomId, showErrorToast],
 	);
 
 	const handleReplyMessage = useCallback((message: TimelineMessage) => {
 		setForwardDialogSource(null);
+		setComposerEditTarget(null);
 		setComposerReplyTarget({
 			preview: createReplyPreviewFromMessage(message),
 			sourceMessageId: message.id,
@@ -3240,6 +3310,60 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			void focusComposer();
 		});
 	}, [focusComposer]);
+
+	const handleEditMessage = useCallback((message: TimelineMessage) => {
+		setComposerReplyTarget(null);
+		setForwardDialogSource(null);
+		setComposerEditTarget({
+			messageId: message.id,
+			roomId: message.roomId,
+			originalText: message.body.rawMarkdown,
+		});
+		setComposerFocusToken((currentToken) => currentToken + 1);
+		window.requestAnimationFrame(() => {
+			void focusComposer();
+		});
+	}, [focusComposer]);
+
+	const handleDeleteMessage = useCallback((message: TimelineMessage) => {
+		setDeleteDialogSource({ message, isSubmitting: false });
+	}, []);
+
+	const handleDeleteConfirm = useCallback(async () => {
+		const source = deleteDialogSource;
+		if (!source || source.isSubmitting) {
+			return;
+		}
+
+		setDeleteDialogSource((current) => current ? { ...current, isSubmitting: true } : current);
+
+		try {
+			await betterChatApi.deleteMessage(source.message.roomId, source.message.id);
+
+			patchRoomTimeline(source.message.roomId, (timeline) => ({
+				...timeline,
+				messages: timeline.messages.map((m) =>
+					m.id === source.message.id
+						? { ...m, body: { rawMarkdown: '' }, flags: { ...m.flags, deleted: true } }
+						: m,
+				),
+			}));
+
+			setDeleteDialogSource(null);
+			void invalidateRoomSnapshotQueries(source.message.roomId);
+		} catch (error) {
+			setDeleteDialogSource((current) => current ? { ...current, isSubmitting: false } : current);
+			const errorHandler = createMutationErrorHandler<unknown, unknown>({
+				showToast: showErrorToast,
+				queryClient,
+			});
+			errorHandler.onError(error, undefined, undefined);
+		}
+	}, [deleteDialogSource, invalidateRoomSnapshotQueries, patchRoomTimeline, queryClient, showErrorToast]);
+
+	const handleClearEdit = useCallback(() => {
+		setComposerEditTarget(null);
+	}, []);
 
 	const handleForwardMessage = useCallback(
 		(message: TimelineMessage) => {
@@ -3935,6 +4059,8 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 								onNavigateSidebar={() => focusSidebarRoom(focusedSidebarRoomId ?? roomId ?? visibleSidebarRoomIds[0] ?? null)}
 									onRetryFailedMessage={handleRetryFailedMessage}
 									onReplyMessage={handleReplyMessage}
+									onEditMessage={handleEditMessage}
+									onDeleteMessage={handleDeleteMessage}
 									roomMentioned={activeEntry ? isRoomMentioned(activeEntry) : false}
 									motionPreference={motionPreference}
 									timeline={activeRoomTimeline}
@@ -4016,6 +4142,8 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 											onReadyChange={handleComposerReadyChange}
 											onNavigateUpBoundary={() => focusTimeline('bottom-visible')}
 											onClearReply={() => setComposerReplyTarget(null)}
+											editTarget={composerEditTarget ? { messageId: composerEditTarget.messageId, originalText: composerEditTarget.originalText } : null}
+											onClearEdit={handleClearEdit}
 											pendingCount={activeRoomPendingSendCount}
 											onSend={sendMessage}
 											replyTo={composerReplyTarget?.preview ?? null}
@@ -4144,6 +4272,17 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 				sidebarOrderingState={sidebarOrderingState}
 				sourceMessage={forwardDialogSource?.message ?? null}
 				sourceRoomTitle={forwardDialogSource?.roomTitle ?? null}
+			/>
+			<DeleteMessageDialog
+				open={Boolean(deleteDialogSource)}
+				onOpenChange={(open) => {
+					if (!open) {
+						setDeleteDialogSource(null);
+					}
+				}}
+				onConfirm={handleDeleteConfirm}
+				sourceMessage={deleteDialogSource?.message ?? null}
+				isSubmitting={deleteDialogSource?.isSubmitting ?? false}
 			/>
 			{forwardToast ? (
 				<div className={styles.forwardToastDock}>

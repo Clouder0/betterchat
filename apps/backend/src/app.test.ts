@@ -1423,7 +1423,8 @@ describe('createApp canonical conversation routes', () => {
     });
   });
 
-  test('creates canonical conversation messages with conversation sync versions', async () => {
+  test('creates canonical conversation messages without forcing snapshot sync materialization', async () => {
+    const snapshotCalls: string[] = [];
     const app = createApp(testConfig, {
       client: createStubClient({
         getSubscription: async () => ({
@@ -1453,7 +1454,46 @@ describe('createApp canonical conversation routes', () => {
         }),
       }),
       logger: silentLogger,
-      snapshotService: createStubSnapshotService(),
+      snapshotService: createStubSnapshotService({
+        conversation: async () => {
+          snapshotCalls.push('conversation');
+          return {
+            version: 'conversation-version-1',
+            conversation: {
+              id: 'room-1',
+              kind: {
+                mode: 'group',
+                privacy: 'public',
+              },
+              title: 'Conversation 1',
+            },
+            membership: {
+              listing: 'listed',
+              starred: false,
+              inbox: emptyMembershipInbox,
+            },
+            capabilities: conversationCapabilitiesFixture(),
+          };
+        },
+        conversationTimeline: async () => {
+          snapshotCalls.push('conversationTimeline');
+          return {
+            version: 'conversation-timeline-version-1',
+            scope: {
+              kind: 'conversation',
+              conversationId: 'room-1',
+            },
+            messages: [],
+          };
+        },
+        directory: async () => {
+          snapshotCalls.push('directory');
+          return {
+            version: 'directory-version-1',
+            entries: [],
+          };
+        },
+      }),
     });
 
     const response = await app.fetch(new Request('http://betterchat.test/api/conversations/room-1/messages', {
@@ -1500,10 +1540,95 @@ describe('createApp canonical conversation routes', () => {
             delete: true,
           },
         },
-        sync: {
-          directoryVersion: 'directory-version-1',
-          conversationVersion: 'conversation-version-1',
-          timelineVersion: 'conversation-timeline-version-1',
+      },
+    });
+    expect(snapshotCalls).toEqual([]);
+  });
+
+  test('propagates submission ids into the upstream text send and echoes them in the canonical response', async () => {
+    let observedInput:
+      | {
+          messageId?: string;
+          roomId: string;
+          text: string;
+        }
+      | undefined;
+    const app = createApp(testConfig, {
+      client: createStubClient({
+        getSubscription: async () => ({
+          success: true,
+          subscription: {
+            _id: 'subscription-1',
+            rid: 'room-1',
+            t: 'c',
+            name: 'room-1',
+            open: true,
+            unread: 0,
+          },
+        }),
+        sendRoomMessage: async (
+          _session: UpstreamSession,
+          input: {
+            messageId?: string;
+            roomId: string;
+            text: string;
+          },
+        ) => {
+          observedInput = input;
+          return {
+            success: true,
+            message: {
+              _id: input.messageId ?? 'message-1',
+              rid: input.roomId,
+              msg: input.text,
+              ts: '2026-03-25T00:00:00.000Z',
+              u: {
+                _id: 'alice-id',
+                username: 'alice',
+                name: 'Alice Example',
+              },
+            },
+          };
+        },
+      }),
+      logger: silentLogger,
+      snapshotService: createStubSnapshotService(),
+    });
+
+    const response = await app.fetch(new Request('http://betterchat.test/api/conversations/room-1/messages', {
+      method: 'POST',
+      headers: {
+        cookie: sessionCookie(),
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        submissionId: 'submission-1',
+        target: {
+          kind: 'conversation',
+        },
+        content: {
+          format: 'markdown',
+          text: 'canonical hello',
+        },
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(observedInput).toEqual({
+      messageId: 'submission-1',
+      roomId: 'room-1',
+      text: 'canonical hello',
+    });
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      data: {
+        message: {
+          id: 'submission-1',
+          submissionId: 'submission-1',
+          conversationId: 'room-1',
+          content: {
+            text: 'canonical hello',
+          },
         },
       },
     });

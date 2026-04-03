@@ -13,6 +13,7 @@ import type {
 	ConversationTimelineSnapshot,
 	CreateConversationMessageRequest,
 	CreateConversationMessageResponse,
+	DeleteMessageResponse,
 	DirectoryEntry,
 	DirectorySnapshot,
 	DirectConversationLookup,
@@ -24,6 +25,8 @@ import type {
 	PresenceState,
 	PublicBootstrap,
 	SessionUser,
+	UpdateMessageRequest,
+	UpdateMessageResponse,
 	UserSummary,
 	WorkspaceBootstrap,
 } from '@betterchat/contracts';
@@ -1135,6 +1138,7 @@ const toConversationKind = (kind: FixtureSidebarEntry['kind']): ConversationKind
 
 const toCanonicalMessage = (message: TimelineMessage): ConversationMessage => ({
 	id: message.id,
+	...(message.submissionId ? { submissionId: message.submissionId } : {}),
 	conversationId: message.roomId,
 	authoredAt: message.createdAt,
 	updatedAt: message.updatedAt,
@@ -1167,6 +1171,21 @@ const toCanonicalMessage = (message: TimelineMessage): ConversationMessage => ({
 });
 
 const toReplyReference = (message: ConversationMessage): ConversationMessageReference => createReplyPreviewFromMessage(toTimelineMessage(message));
+
+const stampMessageActions = (message: ConversationMessage, currentUserId: string | undefined): ConversationMessage => {
+	if (!currentUserId || message.state.deleted) {
+		return { ...message, actions: { edit: false, delete: false } };
+	}
+
+	const isOwnMessage = message.author.id === currentUserId;
+	return {
+		...message,
+		actions: {
+			edit: isOwnMessage,
+			delete: isOwnMessage,
+		},
+	};
+};
 
 const buildFixtureState = (): FixtureState => {
 	const conversationOrder = initialSidebarResponse.entries.map((entry) => entry.roomId);
@@ -1366,7 +1385,7 @@ const buildConversationTimelineSnapshot = (
 			kind: 'conversation' as const,
 			conversationId: roomId,
 		},
-		messages: cloneValue(pageMessages),
+		messages: cloneValue(pageMessages).map((m: ConversationMessage) => stampMessageActions(m, readStoredSessionUser()?.id)),
 		...(nextCursor ? { nextCursor } : {}),
 		...(unreadAnchorMessageId ? { unreadAnchorMessageId } : {}),
 	});
@@ -1850,7 +1869,7 @@ export const fixtureBetterChatService = {
 				conversationId,
 				anchorMessageId: messageId,
 				anchorIndex: anchorIndex - startIndex,
-				messages: record.timeline.slice(startIndex, endIndex),
+				messages: record.timeline.slice(startIndex, endIndex).map((m) => stampMessageActions(m, readStoredSessionUser()?.id)),
 				hasBefore: startIndex > 0,
 				hasAfter: endIndex < record.timeline.length,
 			}),
@@ -1891,7 +1910,8 @@ export const fixtureBetterChatService = {
 
 		const createdAt = createNextFixtureMessageTimestamp(record.timeline);
 		const message: ConversationMessage = {
-			id: createMessageId(conversationId),
+			id: request.submissionId ?? createMessageId(conversationId),
+			...(request.submissionId ? { submissionId: request.submissionId } : {}),
 			conversationId,
 			authoredAt: createdAt,
 			author: createFixtureAuthor(currentUser),
@@ -1912,7 +1932,7 @@ export const fixtureBetterChatService = {
 		record.conversation.lastActivityAt = createdAt;
 
 		return cloneValue({
-			message,
+			message: stampMessageActions(message, currentUser.id),
 			sync: buildMembershipSyncState(conversationId, {
 				includeTimeline: true,
 			}),
@@ -1983,7 +2003,7 @@ export const fixtureBetterChatService = {
 		record.conversation.lastActivityAt = createdAt;
 
 		return cloneValue({
-			message,
+			message: stampMessageActions(message, currentUser.id),
 			sync: buildMembershipSyncState(conversationId, {
 				includeTimeline: true,
 			}),
@@ -2129,6 +2149,100 @@ export const fixtureBetterChatService = {
 			conversationId: roomId,
 			disposition: 'created',
 			sync: buildMembershipSyncState(roomId, {
+				includeTimeline: true,
+			}),
+		});
+	},
+	updateMessage: async (
+		conversationId: string,
+		messageId: string,
+		request: UpdateMessageRequest,
+	): Promise<UpdateMessageResponse> => {
+		const currentUser = requireFixtureSessionUser();
+		const record = requireFixtureConversationRecord(conversationId);
+		const messageIndex = record.timeline.findIndex((m) => m.id === messageId);
+		const message = messageIndex >= 0 ? record.timeline[messageIndex] : undefined;
+		if (!message) {
+			throw {
+				code: 'NOT_FOUND' as const,
+				message: '未找到目标消息。',
+			};
+		}
+
+		if (message.author.id !== currentUser.id) {
+			throw {
+				code: 'UPSTREAM_REJECTED' as const,
+				message: '无法编辑他人的消息。',
+			};
+		}
+
+		const trimmedText = request.text.trim();
+		if (!trimmedText) {
+			throw {
+				code: 'VALIDATION_ERROR' as const,
+				message: '消息内容不能为空。',
+			};
+		}
+
+		const updatedMessage: ConversationMessage = {
+			...message,
+			content: {
+				format: 'markdown',
+				text: trimmedText,
+			},
+			updatedAt: new Date().toISOString(),
+			state: {
+				...message.state,
+				edited: true,
+			},
+		};
+
+		record.timeline[messageIndex] = updatedMessage;
+
+		return cloneValue({
+			message: stampMessageActions(updatedMessage, currentUser.id),
+			sync: buildMembershipSyncState(conversationId, {
+				includeTimeline: true,
+			}),
+		});
+	},
+	deleteMessage: async (
+		conversationId: string,
+		messageId: string,
+	): Promise<DeleteMessageResponse> => {
+		const currentUser = requireFixtureSessionUser();
+		const record = requireFixtureConversationRecord(conversationId);
+		const messageIndex = record.timeline.findIndex((m) => m.id === messageId);
+		const message = messageIndex >= 0 ? record.timeline[messageIndex] : undefined;
+		if (!message) {
+			throw {
+				code: 'NOT_FOUND' as const,
+				message: '未找到目标消息。',
+			};
+		}
+
+		if (message.author.id !== currentUser.id) {
+			throw {
+				code: 'UPSTREAM_REJECTED' as const,
+				message: '无法删除他人的消息。',
+			};
+		}
+
+		record.timeline[messageIndex] = {
+			...message,
+			content: {
+				format: 'markdown',
+				text: '',
+			},
+			state: {
+				...message.state,
+				deleted: true,
+			},
+		};
+
+		return cloneValue({
+			messageId,
+			sync: buildMembershipSyncState(conversationId, {
 				includeTimeline: true,
 			}),
 		});

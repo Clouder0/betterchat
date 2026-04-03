@@ -1057,7 +1057,7 @@ describe('BetterChat backend integration', () => {
       },
     });
     expect(mainMessage.message.content.text).toBe(mainText);
-    expect(mainMessage.sync?.directoryVersion).toBeDefined();
+    expect(mainMessage.sync).toBeUndefined();
 
     const replyMessage = await client.post<CreateConversationMessageResponse>(`/api/conversations/${conversationId}/messages`, {
       target: {
@@ -1109,6 +1109,36 @@ describe('BetterChat backend integration', () => {
       );
       expect(conversationMessageByText(threadTimeline, threadOnlyText)).toBeDefined();
       expect(conversationMessageByText(threadTimeline, broadcastText)).toBeDefined();
+    }, 20_000, 500);
+  });
+
+  test('reuses submission ids as canonical Rocket.Chat text message ids for deterministic reconciliation', async () => {
+    const client = await createAliceClient();
+    const conversationId = roomByKey('publicQuiet').roomId;
+    const submissionId = `betterchat-submission-${Date.now()}`;
+    const text = `[betterchat] submission reconciliation ${Date.now()}`;
+
+    const sent = await client.post<CreateConversationMessageResponse>(`/api/conversations/${conversationId}/messages`, {
+      submissionId,
+      target: {
+        kind: 'conversation',
+      },
+      content: {
+        format: 'markdown',
+        text,
+      },
+    });
+
+    expect(sent.message.id).toBe(submissionId);
+    expect(sent.message.submissionId).toBe(submissionId);
+    expect(sent.message.content.text).toBe(text);
+
+    await waitFor('conversation timeline reflects submission-aware canonical ids', async () => {
+      const timeline = await client.get<ConversationTimelineSnapshot>(`/api/conversations/${conversationId}/timeline`);
+      const message = timeline.messages.find((entry) => entry.id === submissionId);
+
+      expect(message).toBeDefined();
+      expect(message?.content.text).toBe(text);
     }, 20_000, 500);
   });
 
@@ -1350,7 +1380,9 @@ describe('BetterChat backend integration', () => {
     const timelineBeforeUnread = await client.get<ConversationTimelineSnapshot>(
       `/api/conversations/${readConversationId}/timeline?limit=20`,
     );
-    const unreadAnchorId = timelineBeforeUnread.messages.at(-1)?.id;
+    const unreadAnchorId = [...timelineBeforeUnread.messages]
+      .reverse()
+      .find((message) => message.author.username !== fixtureUsers.alice.username)?.id;
     expect(unreadAnchorId).toBeDefined();
 
     const unread = await client.post<MembershipCommandResponse>(

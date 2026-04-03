@@ -6,7 +6,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 
 import type { ComposerEdit, ComposerSelection } from './composerEditing';
 import { isCollapsedSelectionOnLastLine } from './composerBoundaryNavigation';
-import { createComposerEnterEdit, createComposerTabEdit } from './composerEditing';
+import { createComposerEnterEdit, createComposerListIndentEdit, createComposerListOutdentEdit, createComposerTabEdit } from './composerEditing';
 import type { ComposerSendShortcut } from './sendShortcutPreference';
 import { liveMarkdownDecorations } from './liveMarkdownDecorations';
 import styles from './ComposerBar.module.css';
@@ -72,17 +72,20 @@ const runComposerNewline = (view: EditorView) =>
 		state: view.state,
 	});
 
+const getComposerSelectionAndValue = (view: EditorView) => ({
+	selection: {
+		anchor: view.state.selection.main.anchor,
+		head: view.state.selection.main.head,
+	},
+	value: view.state.doc.toString(),
+});
+
 const runComposerTab = (view: EditorView) =>
-	dispatchComposerEdit(
-		view,
-		createComposerTabEdit({
-			selection: {
-				anchor: view.state.selection.main.anchor,
-				head: view.state.selection.main.head,
-			},
-			value: view.state.doc.toString(),
-		}),
-	);
+	dispatchComposerEdit(view, createComposerListIndentEdit(getComposerSelectionAndValue(view))) ||
+	dispatchComposerEdit(view, createComposerTabEdit(getComposerSelectionAndValue(view)));
+
+const runComposerShiftTab = (view: EditorView) =>
+	dispatchComposerEdit(view, createComposerListOutdentEdit(getComposerSelectionAndValue(view)));
 
 export const LiveMarkdownEditor = forwardRef<
 	LiveMarkdownEditorHandle,
@@ -228,6 +231,16 @@ export const LiveMarkdownEditor = forwardRef<
 							dispatch: view.dispatch,
 							state: view.state,
 						});
+					},
+				},
+				{
+					key: 'Shift-Tab',
+					run(view) {
+						if (view.composing) {
+							return false;
+						}
+
+						return runComposerShiftTab(view);
 					},
 				},
 				{

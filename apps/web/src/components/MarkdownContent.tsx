@@ -459,6 +459,8 @@ const createMarkdownComponents = ({
 	h2: ({ children, ...props }) => <h2 {...props}>{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}</h2>,
 	h3: ({ children, ...props }) => <h3 {...props}>{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}</h3>,
 	h4: ({ children, ...props }) => <h4 {...props}>{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}</h4>,
+	h5: ({ children, ...props }) => <h5 {...props}>{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}</h5>,
+	h6: ({ children, ...props }) => <h6 {...props}>{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}</h6>,
 	img: ({ alt, src = '', title }) => (
 		<GalleryImage
 			alt={alt}
@@ -472,6 +474,7 @@ const createMarkdownComponents = ({
 		/>
 	),
 	li: ({ children, ...props }) => <li {...props}>{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}</li>,
+	ol: ({ children, ...props }) => <ol {...props}>{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}</ol>,
 	p: ({ children, ...props }) => <p {...props}>{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}</p>,
 	pre: ({ children }) => <>{children}</>,
 	strong: ({ children, ...props }) => (
@@ -484,6 +487,7 @@ const createMarkdownComponents = ({
 	),
 	td: ({ children, ...props }) => <td {...props}>{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}</td>,
 	th: ({ children, ...props }) => <th {...props}>{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}</th>,
+	ul: ({ children, ...props }) => <ul {...props}>{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}</ul>,
 });
 
 type MarkdownContentProps = {
