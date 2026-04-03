@@ -630,6 +630,13 @@
 	font-style: italic;
 }
 
+.editedIndicator {
+	margin-top: -0.35rem;
+	color: var(--text-muted);
+	font-size: 0.78rem;
+	font-style: italic;
+}
+
 .attachments {
 	display: flex;
 	flex-direction: column;

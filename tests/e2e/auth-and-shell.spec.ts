@@ -305,7 +305,7 @@ test.describe('auth and shell', () => {
 		expect((await roomOrder()).slice(0, 3)).toEqual([
 			'sidebar-room-delivery-room',
 			'sidebar-room-compat-lab',
-			'sidebar-room-history-archive',
+			'sidebar-room-readonly-updates',
 		]);
 
 		await page.reload();
@@ -317,7 +317,7 @@ test.describe('auth and shell', () => {
 		expect((await roomOrder()).slice(0, 3)).toEqual([
 			'sidebar-room-delivery-room',
 			'sidebar-room-compat-lab',
-			'sidebar-room-history-archive',
+			'sidebar-room-readonly-updates',
 		]);
 	});
 
@@ -397,7 +397,10 @@ test.describe('auth and shell', () => {
 					const favoriteDelta = Math.abs(titleRect.top + titleRect.height / 2 - (favoriteRect.top + favoriteRect.height / 2));
 					const infoDelta = Math.abs(titleRect.top + titleRect.height / 2 - (infoRect.top + infoRect.height / 2));
 					const titleToFavoriteGap = favoriteRect.left - titleRect.right;
-					const actionGap = infoRect.left - (favoriteRect.left + favoriteRect.width);
+					const alertToggle = document.querySelector('[data-testid="room-alert-toggle"]');
+					const actionGap = alertToggle instanceof HTMLElement
+						? infoRect.left - (alertToggle.getBoundingClientRect().left + alertToggle.getBoundingClientRect().width)
+						: infoRect.left - (favoriteRect.left + favoriteRect.width);
 					const actionWidthDelta = Math.abs(infoRect.width - favoriteRect.width);
 					const actionHeightDelta = Math.abs(infoRect.height - favoriteRect.height);
 					const dotShape = Math.abs(presenceDotRect.width - presenceDotRect.height) <= 1;
@@ -801,6 +804,10 @@ test.describe('auth and shell', () => {
 		await expect(page.getByTestId('room-favorite-toggle')).toBeFocused();
 
 		await page.keyboard.press('ArrowRight');
+		if (await page.getByTestId('room-alert-toggle').count() > 0) {
+			await expect(page.getByTestId('room-alert-toggle')).toBeFocused();
+			await page.keyboard.press('ArrowRight');
+		}
 		await expect(page.getByTestId('room-info-trigger')).toBeFocused();
 
 		await page.keyboard.press('Enter');

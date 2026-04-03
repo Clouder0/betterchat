@@ -1856,4 +1856,75 @@ describe('BetterChat backend integration', () => {
       await writeRocketChatSettingValue(settingId, originalValue ?? true);
     }
   });
+
+  test('deleted message has state.edited false even if previously edited', async () => {
+    const client = await createAliceClient();
+    const conversationId = roomByKey('publicMain').roomId;
+    const originalText = `[betterchat] edit-then-delete ${Date.now()}`;
+
+    const sent = await client.post<CreateConversationMessageResponse>(
+      `/api/conversations/${conversationId}/messages`,
+      { target: { kind: 'conversation' }, content: { format: 'markdown', text: originalText } },
+    );
+
+    const edited = await client.patch<UpdateMessageResponse>(
+      `/api/conversations/${conversationId}/messages/${sent.message.id}`,
+      { text: `${originalText} edited` },
+    );
+    expect(edited.message.state.edited).toBe(true);
+    expect(edited.message.state.deleted).toBe(false);
+
+    await client.delete<DeleteMessageResponse>(`/api/conversations/${conversationId}/messages/${sent.message.id}`);
+
+    await waitFor('deleted message is reflected in timeline', async () => {
+      const timeline = await client.get<ConversationTimelineSnapshot>(`/api/conversations/${conversationId}/timeline`);
+      const message = timeline.messages.find((entry) => entry.id === sent.message.id);
+      if (message) {
+        expect(message.state.deleted).toBe(true);
+        expect(message.state.edited).toBe(false);
+        return;
+      }
+
+      // Hard-deleted: message removed from timeline entirely — state.edited is moot
+      expect(message).toBeUndefined();
+    }, 20_000, 500);
+  }, 30_000);
+
+  test('reply to deleted message shows deleted placeholder excerpt', async () => {
+    const client = await createAliceClient();
+    const conversationId = roomByKey('publicMain').roomId;
+
+    const parentMessage = await client.post<CreateConversationMessageResponse>(
+      `/api/conversations/${conversationId}/messages`,
+      { target: { kind: 'conversation' }, content: { format: 'markdown', text: `[betterchat] reply-parent ${Date.now()}` } },
+    );
+
+    const replyMessage = await client.post<CreateConversationMessageResponse>(
+      `/api/conversations/${conversationId}/messages`,
+      {
+        target: { kind: 'conversation', replyToMessageId: parentMessage.message.id },
+        content: { format: 'markdown', text: `[betterchat] reply-child ${Date.now()}` },
+      },
+    );
+    expect(replyMessage.message.replyTo?.messageId).toBe(parentMessage.message.id);
+
+    await client.delete<DeleteMessageResponse>(`/api/conversations/${conversationId}/messages/${parentMessage.message.id}`);
+
+    await waitFor('deleted parent is reflected in timeline', async () => {
+      const timeline = await client.get<ConversationTimelineSnapshot>(`/api/conversations/${conversationId}/timeline`);
+      const parent = timeline.messages.find((entry) => entry.id === parentMessage.message.id);
+      if (parent) {
+        // Soft-deleted: parent visible as deleted, reply excerpt should show placeholder
+        expect(parent.state.deleted).toBe(true);
+        const reply = timeline.messages.find((entry) => entry.id === replyMessage.message.id);
+        expect(reply).toBeDefined();
+        expect(reply!.replyTo?.excerpt).toBe('该消息已删除。');
+        expect(reply!.replyTo?.long).toBe(false);
+        return;
+      }
+
+      // Hard-deleted: parent removed, excerpt preserved from creation time
+      expect(parent).toBeUndefined();
+    }, 20_000, 500);
+  }, 30_000);
 });

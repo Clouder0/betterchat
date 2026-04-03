@@ -110,6 +110,77 @@ describe('authorQuickPanelNavigation', () => {
 		).toEqual(['message-1', 'message-2']);
 	});
 
+	it('does not group a deleted message with its predecessor', () => {
+		expect(
+			shouldVisuallyGroupTimelineMessages(
+				createMessage({
+					authorId: 'user-a',
+					createdAt: '2026-03-28T09:00:00.000Z',
+					id: 'message-1',
+				}),
+				{
+					...createMessage({
+						authorId: 'user-a',
+						createdAt: '2026-03-28T09:01:00.000Z',
+						id: 'message-2',
+					}),
+					flags: { edited: false, deleted: true },
+				},
+			),
+		).toBe(false);
+	});
+
+	it('does not group a message with a deleted predecessor', () => {
+		expect(
+			shouldVisuallyGroupTimelineMessages(
+				{
+					...createMessage({
+						authorId: 'user-a',
+						createdAt: '2026-03-28T09:00:00.000Z',
+						id: 'message-1',
+					}),
+					flags: { edited: false, deleted: true },
+				},
+				createMessage({
+					authorId: 'user-a',
+					createdAt: '2026-03-28T09:01:00.000Z',
+					id: 'message-2',
+				}),
+			),
+		).toBe(false);
+	});
+
+	it('treats deleted messages as group boundaries in author-navigable collection', () => {
+		const messages = [
+			createMessage({
+				authorId: 'user-a',
+				createdAt: '2026-03-28T09:00:00.000Z',
+				id: 'message-1',
+			}),
+			{
+				...createMessage({
+					authorId: 'user-a',
+					createdAt: '2026-03-28T09:01:00.000Z',
+					id: 'message-2',
+				}),
+				flags: { edited: false, deleted: true },
+			},
+			createMessage({
+				authorId: 'user-a',
+				createdAt: '2026-03-28T09:02:00.000Z',
+				id: 'message-3',
+			}),
+		];
+
+		expect(
+			collectAuthorNavigableMessageIds({
+				authorQuickPanelEnabled: true,
+				currentUserId: 'current-user',
+				messages,
+			}),
+		).toEqual(['message-1', 'message-2', 'message-3']);
+	});
+
 	it('resolves author-lane travel across grouped messages instead of landing on continuations', () => {
 		const navigableMessageIds = ['message-1', 'message-3', 'message-5'];
 

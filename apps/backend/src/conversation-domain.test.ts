@@ -561,6 +561,97 @@ describe('conversation-domain normalization', () => {
     expect(thread.messages.map((entry) => entry.id)).toEqual(['thread-reply']);
   });
 
+  test('state.edited is false for soft-deleted messages even when editedAt is set', () => {
+    const softDeleted = message({
+      editedAt: '2026-03-27T10:05:00.000Z',
+      t: 'rm',
+      msg: '',
+    });
+
+    const normalized = normalizeConversationMessage(upstreamUrl, softDeleted, new Map(), 'alice');
+
+    expect(normalized.state.edited).toBe(false);
+    expect(normalized.state.deleted).toBe(true);
+  });
+
+  test('state.edited is false for trash-deleted messages even when editedAt is set', () => {
+    const trashDeleted = message({
+      editedAt: '2026-03-27T10:05:00.000Z',
+      _deletedAt: '2026-03-27T10:06:00.000Z',
+    });
+
+    const normalized = normalizeConversationMessage(upstreamUrl, trashDeleted, new Map(), 'alice');
+
+    expect(normalized.state.edited).toBe(false);
+    expect(normalized.state.deleted).toBe(true);
+  });
+
+  test('state.edited is true for genuinely edited non-deleted messages', () => {
+    const edited = message({
+      editedAt: '2026-03-27T10:05:00.000Z',
+    });
+
+    const normalized = normalizeConversationMessage(upstreamUrl, edited, new Map(), 'alice');
+
+    expect(normalized.state.edited).toBe(true);
+    expect(normalized.state.deleted).toBe(false);
+  });
+
+  test('replyTo excerpt shows deleted placeholder when parent message is soft-deleted', () => {
+    const deletedParent = message({
+      _id: 'parent-1',
+      msg: '',
+      t: 'rm',
+    });
+    const reply = message({
+      _id: 'reply-1',
+      msg: '[ ](http://127.0.0.1:3100/channel/general?msg=parent-1)\nReply body',
+      attachments: [
+        {
+          message_link: 'http://127.0.0.1:3100/channel/general?msg=parent-1',
+          text: 'Parent body',
+          author_name: 'Alice Example',
+        },
+      ],
+    });
+
+    const normalized = normalizeConversationMessage(upstreamUrl, reply, new Map([['parent-1', deletedParent]]), 'alice');
+
+    expect(normalized.replyTo).toEqual({
+      messageId: 'parent-1',
+      authorName: 'Alice Example',
+      excerpt: '该消息已删除。',
+      long: false,
+    });
+  });
+
+  test('replyTo excerpt derives from parent content when parent is not deleted', () => {
+    const parent = message({
+      _id: 'parent-1',
+      msg: 'Parent body here',
+    });
+    const reply = message({
+      _id: 'reply-1',
+      msg: '[ ](http://127.0.0.1:3100/channel/general?msg=parent-1)\nReply body',
+      attachments: [
+        {
+          message_link: 'http://127.0.0.1:3100/channel/general?msg=parent-1',
+          text: 'Parent body here',
+          author_name: 'Alice Example',
+        },
+      ],
+    });
+
+    const normalized = normalizeConversationMessage(upstreamUrl, reply, new Map([['parent-1', parent]]), 'alice');
+
+    expect(normalized.replyTo).toEqual({
+      messageId: 'parent-1',
+      authorName: 'Alice Example',
+      excerpt: 'Parent body here',
+      long: false,
+    });
+  });
+
   test('fails explicitly on unsupported upstream room kinds', () => {
     expect(() =>
       normalizeConversationSnapshot(

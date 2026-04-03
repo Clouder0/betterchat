@@ -3336,6 +3336,10 @@ export const TimelineView = ({
 			return [];
 		}
 
+		if (activeContextMenuMessage.flags.deleted) {
+			return [];
+		}
+
 		const items: MessageContextMenuItem[] = [];
 
 		if (onReplyMessage) {
@@ -5489,11 +5493,10 @@ export const TimelineView = ({
 													</>
 												)}
 												<time dateTime={message.createdAt}>{formatMessageTime(message.createdAt)}</time>
-												{message.flags.edited ? <span>{spaceText('已编辑')}</span> : null}
 											</div>
 										) : null}
 
-										{deliveryAccessory || !isLocalOutgoingMessage ? (
+										{deliveryAccessory || (!isLocalOutgoingMessage && !message.flags.deleted) ? (
 											<div className={styles.messageAccessory}>
 												{deliveryAccessory ?? (
 													<div className={styles.messageActions} data-testid={`message-actions-${message.id}`}>
@@ -5635,6 +5638,15 @@ export const TimelineView = ({
 														) : null,
 													)}
 												</div>
+											) : null}
+
+											{message.flags.edited && !message.flags.deleted ? (
+												<span
+													className={styles.editedIndicator}
+													title={message.updatedAt ? `编辑于 ${formatMessageTime(message.updatedAt)}` : undefined}
+												>
+													{spaceText('(已编辑)')}
+												</span>
 											) : null}
 										</div>
 

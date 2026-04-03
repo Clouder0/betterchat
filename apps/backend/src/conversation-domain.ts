@@ -442,7 +442,12 @@ export const normalizeConversationMessage = (
   const currentUsername = currentUsernameFromViewerContext(viewerContext);
   const replyParentMessageId = replyParentMessageIdFrom(message, upstreamUrl);
   const replyParent = replyParentMessageId ? parentMessages.get(replyParentMessageId) : undefined;
-  const replyExcerpt = replyParent ? excerptFrom(replyParent) : undefined;
+  const isReplyParentDeleted = replyParent && (replyParent.t === 'rm' || Boolean(replyParent._deletedAt));
+  const replyExcerpt = replyParent
+    ? isReplyParentDeleted
+      ? { excerpt: '该消息已删除。', long: false }
+      : excerptFrom(replyParent)
+    : undefined;
   const quoteAttachment = quoteAttachmentFrom(message);
   const quotePreview =
     !replyParent && quoteAttachment && quoteAttachment.message_link
@@ -479,7 +484,7 @@ export const normalizeConversationMessage = (
       text: stripLeadingQuotePlaceholders(message),
     },
     state: {
-      edited: Boolean(message.editedAt),
+      edited: Boolean(message.editedAt) && message.t !== 'rm' && !message._deletedAt,
       deleted: Boolean(message._deletedAt) || message.t === 'rm',
     },
     replyTo:

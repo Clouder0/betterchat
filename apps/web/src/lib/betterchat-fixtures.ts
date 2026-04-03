@@ -2235,10 +2235,16 @@ export const fixtureBetterChatService = {
 				text: '',
 			},
 			state: {
-				...message.state,
+				edited: false,
 				deleted: true,
 			},
 		};
+
+		for (const m of record.timeline) {
+			if (m.replyTo?.messageId === messageId) {
+				m.replyTo = { ...m.replyTo, excerpt: '该消息已删除。', long: false };
+			}
+		}
 
 		return cloneValue({
 			messageId,

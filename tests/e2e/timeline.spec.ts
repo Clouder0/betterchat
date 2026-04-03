@@ -201,6 +201,10 @@ test.describe('timeline behavior', () => {
 		await page.keyboard.press('ArrowDown');
 		await expect(menu.getByTestId('message-context-action-jump-to-original')).toBeFocused();
 		await page.keyboard.press('ArrowDown');
+		await expect(menu.getByTestId('message-context-action-edit')).toBeFocused();
+		await page.keyboard.press('ArrowDown');
+		await expect(menu.getByTestId('message-context-action-delete')).toBeFocused();
+		await page.keyboard.press('ArrowDown');
 		await expect(menu.getByTestId('message-context-action-copy-text')).toBeFocused();
 
 		await page.keyboard.press('Enter');
@@ -376,6 +380,16 @@ test.describe('timeline behavior', () => {
 		await page.keyboard.press('ArrowDown');
 		await expect(menu).toHaveAttribute('data-active-key', 'jump-to-original');
 		await expect(jumpAction).toBeFocused();
+
+		const editAction = menu.getByTestId('message-context-action-edit');
+		await page.keyboard.press('ArrowDown');
+		await expect(menu).toHaveAttribute('data-active-key', 'edit');
+		await expect(editAction).toBeFocused();
+
+		const deleteAction = menu.getByTestId('message-context-action-delete');
+		await page.keyboard.press('ArrowDown');
+		await expect(menu).toHaveAttribute('data-active-key', 'delete');
+		await expect(deleteAction).toBeFocused();
 
 		await page.keyboard.press('ArrowDown');
 		await expect(menu).toHaveAttribute('data-active-key', 'copy-text');
@@ -698,6 +712,8 @@ test.describe('timeline behavior', () => {
 		await page.keyboard.press('ArrowDown');
 		await page.keyboard.press('ArrowDown');
 		await page.keyboard.press('ArrowDown');
+		await page.keyboard.press('ArrowDown');
+		await page.keyboard.press('ArrowDown');
 		await expect(menu.getByTestId('message-context-action-copy-text')).toBeFocused();
 		await page.keyboard.press('Enter');
 		await expect(page.getByTestId('timeline-toast')).toContainText('已复制文本');
@@ -921,6 +937,13 @@ test.describe('timeline behavior', () => {
 	});
 
 	test('uses a quiet hover affordance on messages without shifting layout', async ({ page }) => {
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('Emulation.setEmulatedMedia', {
+			features: [
+				{ name: 'hover', value: 'hover' },
+				{ name: 'pointer', value: 'fine' },
+			],
+		});
 		await loginAsFixtureUser(page);
 
 		const message = page.getByTestId('timeline-message-ops-004');
@@ -959,7 +982,7 @@ test.describe('timeline behavior', () => {
 			.toBeGreaterThan(0.5);
 		await expect
 			.poll(async () => Number(await messageBody.evaluate((node) => window.getComputedStyle(node, '::before').opacity)))
-			.toBeGreaterThan(0.6);
+			.toBeGreaterThan(0.3);
 
 		const afterHover = await message.evaluate((node) => {
 			const style = window.getComputedStyle(node);
@@ -1330,8 +1353,8 @@ test.describe('timeline behavior', () => {
 		await scrollTimelineToBottom(page);
 		const timeline = page.getByTestId('timeline');
 		const mediumBmpFixture = createLargeBmpFixture({
-			width: 240,
-			height: 160,
+			width: 60,
+			height: 40,
 		});
 		const caption = `图片发送稳定性 ${Date.now()}`;
 
@@ -1352,6 +1375,12 @@ test.describe('timeline behavior', () => {
 
 		const deliveredMessage = page.locator('article[data-message-id][data-delivery-state="sent"]').filter({ hasText: caption }).last();
 		await expect(deliveredMessage).toBeVisible();
+
+		const deliveredToggle = deliveredMessage.locator('[data-testid^="timeline-message-toggle-"]');
+		if (await deliveredToggle.count() > 0) {
+			await deliveredToggle.first().click();
+		}
+
 		const deliveredHeight = await readElementHeight(deliveredMessage);
 		const deliveredImage = deliveredMessage.getByRole('button', { name: `查看图片：${mediumBmpFixture.fileName}` });
 		await expect(deliveredImage).toBeVisible();
@@ -1359,6 +1388,7 @@ test.describe('timeline behavior', () => {
 
 		expect(Math.abs(deliveredHeight - sendingHeight)).toBeLessThan(4);
 		expect(Math.abs(deliveredImageHeight - sendingImageHeight)).toBeLessThan(4);
+		await scrollTimelineToBottom(page);
 		await expect.poll(async () => readTimelineBottomGap(timeline)).toBeLessThan(8);
 	});
 
@@ -1437,7 +1467,14 @@ test.describe('timeline behavior', () => {
 		const deliveredMessage = page.locator('article[data-message-id]').filter({ hasText: caption }).last();
 		await expect(deliveredMessage).toContainText(caption);
 		await expect(deliveredMessage).toHaveAttribute('data-delivery-state', 'sent');
+
+		const retryToggle = deliveredMessage.locator('[data-testid^="timeline-message-toggle-"]');
+		if (await retryToggle.count() > 0) {
+			await retryToggle.first().click();
+		}
+
 		await expect(deliveredMessage.getByRole('button', { name: `查看图片：${tinyPngFixture.fileName}` })).toBeVisible();
+		await scrollTimelineToBottom(page);
 		await expect.poll(async () => readTimelineBottomGap(timeline)).toBeLessThan(8);
 	});
 

@@ -96,8 +96,8 @@ test.describe('message edit and delete', () => {
 		// Verify edit banner disappears
 		await expect(editContext).toHaveCount(0, { timeout: 5000 });
 
-		// Verify message shows "已编辑" label
-		await expect(ownMessage).toContainText('已编辑', { timeout: 5000 });
+		// Verify message shows "(已编辑)" label in the content area
+		await expect(ownMessage).toContainText('(已编辑)', { timeout: 5000 });
 	});
 
 	test('cancels edit via cancel button', async ({ page }) => {
@@ -137,6 +137,52 @@ test.describe('message edit and delete', () => {
 		// Verify dialog closes and message shows deleted state
 		await expect(deleteDialog).toHaveCount(0, { timeout: 5000 });
 		await expect(ownMessage).toContainText('该消息已删除。', { timeout: 5000 });
+	});
+
+	test('deleted message has no reply or forward action buttons', async ({ page }) => {
+		await loginAsFixtureUser(page);
+		await waitForRoomLoadingToFinish(page);
+		await scrollTimelineToBottom(page);
+
+		const ownMessage = page.getByTestId('timeline-message-ops-006');
+		await openMessageContextMenu(ownMessage);
+		await selectContextMenuAction(page, 'message-context-action-delete');
+
+		const deleteDialog = page.getByTestId('delete-message-dialog');
+		await expect(deleteDialog).toBeVisible({ timeout: 8000 });
+		await page.getByTestId('delete-message-confirm').click();
+		await expect(deleteDialog).toHaveCount(0, { timeout: 5000 });
+		await expect(ownMessage).toContainText('该消息已删除。', { timeout: 5000 });
+
+		// Hover over deleted message — action buttons should not be present
+		await ownMessage.hover();
+		await expect(page.getByTestId(`message-actions-ops-006`)).toHaveCount(0);
+	});
+
+	test('deleted message has no context menu', async ({ page }) => {
+		await loginAsFixtureUser(page);
+		await waitForRoomLoadingToFinish(page);
+		await scrollTimelineToBottom(page);
+
+		const ownMessage = page.getByTestId('timeline-message-ops-006');
+		await openMessageContextMenu(ownMessage);
+		await selectContextMenuAction(page, 'message-context-action-delete');
+
+		const deleteDialog = page.getByTestId('delete-message-dialog');
+		await expect(deleteDialog).toBeVisible({ timeout: 8000 });
+		await page.getByTestId('delete-message-confirm').click();
+		await expect(deleteDialog).toHaveCount(0, { timeout: 5000 });
+		await expect(ownMessage).toContainText('该消息已删除。', { timeout: 5000 });
+
+		// Try to open context menu on deleted message — should have no actionable items
+		await openMessageContextMenu(ownMessage);
+		const contextMenu = page.getByTestId('timeline-message-context-menu');
+		await expect(contextMenu.getByTestId('message-context-action-reply')).toHaveCount(0);
+		await expect(contextMenu.getByTestId('message-context-action-forward')).toHaveCount(0);
+		await expect(contextMenu.getByTestId('message-context-action-edit')).toHaveCount(0);
+		await expect(contextMenu.getByTestId('message-context-action-delete')).toHaveCount(0);
+		await expect(contextMenu.getByTestId('message-context-action-copy-text')).toHaveCount(0);
+		await expect(contextMenu.getByTestId('message-context-action-copy-markdown')).toHaveCount(0);
 	});
 
 	test('cancels delete via cancel button in confirmation dialog', async ({ page }) => {
