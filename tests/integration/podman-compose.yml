@@ -38,6 +38,7 @@ services:
       BETTERCHAT_HOST: 0.0.0.0
       BETTERCHAT_PORT: 3200
       BETTERCHAT_UPSTREAM_URL: http://127.0.0.1:3100
+      BETTERCHAT_STATE_DIR: /app/.runtime
       BETTERCHAT_SESSION_COOKIE_NAME: betterchat_session
       BETTERCHAT_SESSION_COOKIE_SECURE: 'false'
       BETTERCHAT_SESSION_SECRET: ${BETTERCHAT_TEST_SESSION_SECRET:-betterchat-integration-session-secret}

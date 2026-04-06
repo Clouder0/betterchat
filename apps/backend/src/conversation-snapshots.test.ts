@@ -15,6 +15,7 @@ import type { RocketChatClient } from './upstream';
 const testConfig: BetterChatConfig = {
   host: '127.0.0.1',
   port: 3200,
+  stateDir: '/tmp/betterchat-conversation-snapshots-test-state',
   upstreamUrl: 'http://127.0.0.1:3100',
   upstreamRequestTimeoutMs: 15_000,
   upstreamMediaTimeoutMs: 30_000,

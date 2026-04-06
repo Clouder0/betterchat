@@ -104,6 +104,11 @@ export class ConversationStreamConnection {
       },
       onError: (error) => this.emitStreamError(error),
       onHealthy: () => this.markUpstreamHealthy(),
+      onMessagesDeleted: (conversationId, messageIds) => {
+        for (const messageId of messageIds) {
+          this.snapshotService.rememberExternalDeletedMessageId(conversationId, messageId);
+        }
+      },
       onPresenceChanged: (change) => {
         void this.handlePresenceChanged(change);
       },

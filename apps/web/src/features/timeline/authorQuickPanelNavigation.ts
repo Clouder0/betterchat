@@ -14,10 +14,6 @@ export const shouldVisuallyGroupTimelineMessages = (
 		return false;
 	}
 
-	if (previousMessage.flags.deleted || nextMessage.flags.deleted) {
-		return false;
-	}
-
 	const previousTimestamp = Date.parse(previousMessage.createdAt);
 	const nextTimestamp = Date.parse(nextMessage.createdAt);
 

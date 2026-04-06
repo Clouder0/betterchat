@@ -7,6 +7,11 @@ import type {
 
 import type { BetterChatConfig } from './config';
 import {
+  createSqliteConversationMessageLedger,
+  InMemoryConversationMessageLedger,
+  type ConversationMessageLedger,
+} from './conversation-message-ledger';
+import {
   buildConversationMessageContextSnapshot,
   buildConversationSnapshotState,
   buildConversationTimelineSnapshot,
@@ -14,12 +19,13 @@ import {
   buildDirectorySnapshotState,
   buildThreadConversationTimelineSnapshot,
 } from './conversation-snapshots';
+import { findCanonicalConversationMessage, toDeletedTombstoneMessageFromEnvelope } from './conversation-tombstones';
 import type { PaginationRequest } from './pagination';
 import { sessionKeyFrom, type UpstreamSession } from './session';
 import { InFlightRequestCache } from './snapshot-cache';
 import { SnapshotFactCache } from './snapshot-facts';
 import { toAppError } from './errors';
-import { type RocketChatClient } from './upstream';
+import { type RocketChatClient, type UpstreamMessage } from './upstream';
 
 type DirectorySnapshotState = Awaited<ReturnType<typeof buildDirectorySnapshotState>>;
 type DirectoryEntryState = Awaited<ReturnType<typeof buildDirectoryEntryState>>;
@@ -83,6 +89,7 @@ export class SnapshotService {
     private readonly client: RocketChatClient,
     private readonly cache = new InFlightRequestCache(),
     private readonly loaders: SnapshotLoaders = defaultSnapshotLoaders,
+    private readonly ledger: ConversationMessageLedger = new InMemoryConversationMessageLedger(),
   ) {}
 
   directory(session: UpstreamSession, scope?: SnapshotReadScope): Promise<DirectorySnapshot> {
@@ -91,7 +98,7 @@ export class SnapshotService {
 
   directoryState(session: UpstreamSession, scope?: SnapshotReadScope): Promise<DirectorySnapshotState> {
     return this.cache.getOrLoad(this.directoryKeyFor(session), () =>
-      this.loaders.buildDirectorySnapshotState(this.client, session, this.factsFor(scope)),
+      this.loaders.buildDirectorySnapshotState(this.client, session, this.factsFor(scope), this.ledger),
     );
   }
 
@@ -101,7 +108,7 @@ export class SnapshotService {
     scope?: SnapshotReadScope,
   ): Promise<DirectoryEntryState> {
     return this.cache.getOrLoad(this.directoryKeyFor(session, `entry:${conversationId}`), () =>
-      this.loaders.buildDirectoryEntryState(this.client, session, conversationId, this.factsFor(scope)),
+      this.loaders.buildDirectoryEntryState(this.client, session, conversationId, this.factsFor(scope), this.ledger),
     );
   }
 
@@ -111,7 +118,7 @@ export class SnapshotService {
 
   conversationState(session: UpstreamSession, conversationId: string, scope?: SnapshotReadScope): Promise<ConversationSnapshotState> {
     return this.cache.getOrLoad(this.conversationKeyFor(session, conversationId, 'snapshot'), () =>
-      this.loaders.buildConversationSnapshotState(this.client, session, conversationId, this.factsFor(scope)),
+      this.loaders.buildConversationSnapshotState(this.client, session, conversationId, this.factsFor(scope), this.ledger),
     );
   }
 
@@ -123,7 +130,7 @@ export class SnapshotService {
   ): Promise<ConversationTimelineSnapshot> {
     return this.cache.getOrLoad(
       this.conversationKeyFor(session, conversationId, `timeline:${pageKeyFrom(page, this.config.defaultMessagePageSize)}`),
-      () => this.loaders.buildConversationTimelineSnapshot(this.config, this.client, session, conversationId, page, this.factsFor(scope)),
+      () => this.loaders.buildConversationTimelineSnapshot(this.config, this.client, session, conversationId, page, this.factsFor(scope), this.ledger),
     );
   }
 
@@ -148,6 +155,7 @@ export class SnapshotService {
           messageId,
           contextWindow,
           this.factsFor(scope),
+          this.ledger,
         ),
     );
   }
@@ -170,6 +178,7 @@ export class SnapshotService {
           threadId,
           page,
           this.factsFor(scope),
+          this.ledger,
         ),
     );
   }
@@ -235,6 +244,40 @@ export class SnapshotService {
     const generations = this.generationsFor(session);
     const key = threadGenerationKeyFrom(conversationId, threadId);
     generations.threadById.set(key, this.threadGenerationFor(generations, conversationId, threadId) + 1);
+  }
+
+  observeMessage(message: UpstreamMessage): UpstreamMessage {
+    this.ledger.observe(message);
+    return message;
+  }
+
+  observeMessages(messages: Iterable<UpstreamMessage>): void {
+    this.ledger.observeMany(messages);
+  }
+
+  rememberDeletedMessage(message: UpstreamMessage): UpstreamMessage {
+    return toDeletedTombstoneMessageFromEnvelope(this.ledger.markDeleted(message, {
+      source: 'betterchat-delete',
+    }));
+  }
+
+  rememberExternalDeletedMessageId(conversationId: string, messageId: string): UpstreamMessage | undefined {
+    const envelope = this.ledger.markDeletedById(conversationId, messageId, {
+      source: 'upstream-realtime',
+    });
+    return envelope ? toDeletedTombstoneMessageFromEnvelope(envelope) : undefined;
+  }
+
+  findCanonicalMessage(
+    session: UpstreamSession,
+    conversationId: string,
+    messageId: string,
+  ): Promise<UpstreamMessage | undefined> {
+    return findCanonicalConversationMessage(this.client, session, conversationId, messageId, this.ledger);
+  }
+
+  close(): void {
+    this.ledger.close();
   }
 
   clearSession(session: Pick<UpstreamSession, 'authToken'>): void {
@@ -430,7 +473,8 @@ export const createSnapshotService = (
   client: RocketChatClient,
   cache = new InFlightRequestCache(),
   loaders: SnapshotLoaders = defaultSnapshotLoaders,
-): SnapshotService => new SnapshotService(config, client, cache, loaders);
+  ledger: ConversationMessageLedger = createSqliteConversationMessageLedger(config),
+): SnapshotService => new SnapshotService(config, client, cache, loaders, ledger);
 
 export const createSnapshotReadScope = (): SnapshotReadScope => new SnapshotReadScope();
 

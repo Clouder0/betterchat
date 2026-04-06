@@ -85,6 +85,7 @@ export type UpstreamRealtimeCallbacks = {
   onCapabilitiesChanged: () => void;
   onError: (error: AppError) => void;
   onHealthy: () => void;
+  onMessagesDeleted: (roomId: string, messageIds: string[]) => void;
   onPresenceChanged: (change: UpstreamPresenceChange) => void;
   onRoomChanged: (
     roomId: string,
@@ -760,7 +761,31 @@ export class UpstreamRealtimeBridge {
       return;
     }
 
-    if (eventName.endsWith('/deleteMessage') || eventName.endsWith('/deleteMessageBulk')) {
+    if (eventName.endsWith('/deleteMessage')) {
+      const deletedMessage = args[0];
+      const deletedMessageId =
+        deletedMessage && typeof deletedMessage === 'object' && '_id' in deletedMessage && typeof deletedMessage._id === 'string'
+          ? deletedMessage._id
+          : undefined;
+      if (deletedMessageId) {
+        this.callbacks.onMessagesDeleted(roomId, [deletedMessageId]);
+      }
+      this.callbacks.onRoomChanged(roomId, 'messages-changed');
+      return;
+    }
+
+    if (eventName.endsWith('/deleteMessageBulk')) {
+      const deletedMessages = args[0];
+      const deletedMessageIds =
+        deletedMessages
+        && typeof deletedMessages === 'object'
+        && 'ids' in deletedMessages
+        && Array.isArray(deletedMessages.ids)
+          ? deletedMessages.ids.filter((value): value is string => typeof value === 'string' && value.length > 0)
+          : [];
+      if (deletedMessageIds.length > 0) {
+        this.callbacks.onMessagesDeleted(roomId, deletedMessageIds);
+      }
       this.callbacks.onRoomChanged(roomId, 'messages-changed');
       return;
     }

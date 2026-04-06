@@ -10,11 +10,12 @@ import { requestIdHeaderName, type BetterChatLogger } from './observability';
 import { serializeSessionCookie, type UpstreamSession } from './session';
 import type { SnapshotService } from './snapshot-service';
 import { conversationCapabilitiesFixture, emptyMembershipInbox } from './test-fixtures';
-import type { RocketChatClient } from './upstream';
+import type { RocketChatClient, UpstreamMessage } from './upstream';
 
 const testConfig: BetterChatConfig = {
   host: '127.0.0.1',
   port: 3200,
+  stateDir: '/tmp/betterchat-app-test-state',
   upstreamUrl: 'http://127.0.0.1:3100',
   upstreamRequestTimeoutMs: 15_000,
   upstreamMediaTimeoutMs: 30_000,
@@ -157,6 +158,10 @@ const createStubSnapshotService = (
       },
       messages: [],
     }),
+    observeMessage: (message: UpstreamMessage) => message,
+    observeMessages: () => undefined,
+    rememberDeletedMessage: (message: UpstreamMessage) => message,
+    rememberExternalDeletedMessageId: () => undefined,
     directory: async () => ({
       version: 'directory-version-1',
       entries: [],
@@ -195,6 +200,7 @@ const createStubSnapshotService = (
         },
       },
     }),
+    close: () => undefined,
     ...overrides,
   }) as unknown as SnapshotService;
 
@@ -1052,6 +1058,7 @@ describe('createApp image upload validation', () => {
     const tinyConfig: BetterChatConfig = {
       ...testConfig,
       maxUploadBytes: 1024,
+      stateDir: '/tmp/betterchat-app-test-state-tiny',
     };
     let uploadCalled = false;
 

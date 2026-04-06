@@ -1,16 +1,20 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import type { BetterChatConfig } from './config';
 import { AppError } from './errors';
 import { InFlightRequestCache } from './snapshot-cache';
-import { createSnapshotReadScope, SnapshotService, type SnapshotLoaders } from './snapshot-service';
+import { createSnapshotReadScope, createSnapshotService, SnapshotService, type SnapshotLoaders } from './snapshot-service';
 import { sessionKeyFrom, type UpstreamSession } from './session';
 import { conversationCapabilitiesFixture, emptyMembershipInbox } from './test-fixtures';
-import type { RocketChatClient } from './upstream';
+import type { RocketChatClient, UpstreamMessage } from './upstream';
 
 const testConfig: BetterChatConfig = {
   host: '127.0.0.1',
   port: 3200,
+  stateDir: '/tmp/betterchat-snapshot-service-test-state',
   upstreamUrl: 'http://127.0.0.1:3100',
   upstreamRequestTimeoutMs: 15_000,
   upstreamMediaTimeoutMs: 30_000,
@@ -132,6 +136,53 @@ const createLoaders = (overrides: Partial<SnapshotLoaders> = {}): SnapshotLoader
 });
 
 describe('SnapshotService freshness invalidation', () => {
+  test('reuses the durable canonical message ledger across service recreation', async () => {
+    const stateDir = mkdtempSync(join(tmpdir(), 'betterchat-snapshot-service-'));
+    try {
+      const persistenceConfig: BetterChatConfig = {
+        ...testConfig,
+        stateDir,
+      };
+      const deletedMessage = {
+        _id: 'message-1',
+        rid: 'room-1',
+        msg: 'hello',
+        ts: '2026-04-07T08:00:00.000Z',
+        u: {
+          _id: 'alice-id',
+          username: 'alice',
+          name: 'Alice Example',
+        },
+      } satisfies UpstreamMessage;
+      const firstService = createSnapshotService(
+        persistenceConfig,
+        {
+          findMessage: async () => deletedMessage,
+        } as unknown as RocketChatClient,
+      );
+
+      firstService.observeMessage(deletedMessage);
+      firstService.rememberDeletedMessage(deletedMessage);
+      firstService.close();
+
+      const secondService = createSnapshotService(
+        persistenceConfig,
+        {
+          findMessage: async () => undefined,
+        } as unknown as RocketChatClient,
+      );
+
+      await expect(secondService.findCanonicalMessage(testSession, 'room-1', 'message-1')).resolves.toMatchObject({
+        _id: 'message-1',
+        rid: 'room-1',
+        t: 'rm',
+      });
+      secondService.close();
+    } finally {
+      rmSync(stateDir, { force: true, recursive: true });
+    }
+  });
+
   test('coalesces concurrent conversation timeline reads within the same generation', async () => {
     let loadCount = 0;
     const loaders = createLoaders({

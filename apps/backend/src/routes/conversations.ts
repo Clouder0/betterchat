@@ -339,6 +339,7 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
         await ensureOpenSubscription(client, session, conversationId);
       }
 
+      snapshotService.observeMessage(response.message);
       const parentMessages = await replyPreviewParentMessages(
         client,
         session,
@@ -371,6 +372,7 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
     try {
       const authorizationContext = await loadConversationAuthorizationContext(client, session, conversationId);
       const currentMessage = await getRoomMessage(client, session, conversationId, messageId);
+      snapshotService.observeMessage(currentMessage);
       let quoteMessageLink: string | undefined;
 
       if (currentMessage.tmid && body.replyToMessageId !== undefined) {
@@ -406,6 +408,7 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
         text: body.text,
         ...(quoteMessageLink ? { quoteMessageLink } : {}),
       });
+      snapshotService.observeMessage(response.message);
       const parentMessages = await replyPreviewParentMessages(client, session, response.message.tmid);
       const sync = await buildFreshConversationSnapshotSync(snapshotService, session, conversationId, {
         includeDirectory: true,
@@ -433,11 +436,13 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
 
     try {
       const message = await getRoomMessage(client, session, conversationId, messageId);
+      snapshotService.observeMessage(message);
 
       await client.deleteMessage(session, {
         roomId: conversationId,
         messageId,
       });
+      snapshotService.rememberDeletedMessage(message);
       const sync = await buildFreshConversationSnapshotSync(snapshotService, session, conversationId, {
         includeDirectory: true,
         includeConversation: true,
@@ -479,6 +484,7 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
           messageId,
         });
       }
+      snapshotService.observeMessage(updatedMessage);
 
       const parentMessages = await replyPreviewParentMessages(client, session, updatedMessage.tmid);
       const normalizedMessage = normalizeConversationMessage(
@@ -591,6 +597,7 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
           await ensureOpenSubscription(client, session, conversationId);
         }
 
+        snapshotService.observeMessage(confirmed.message);
         const parentMessages = await replyPreviewParentMessages(
           client,
           session,

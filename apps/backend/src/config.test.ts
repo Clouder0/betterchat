@@ -9,12 +9,14 @@ describe('config', () => {
     });
 
     expect(config.maxUploadBytes).toBe(50 * 1024 * 1024);
+    expect(config.stateDir).toBe('.runtime');
   });
 
   test('normalizes a valid upstream url and keeps explicit values', () => {
     const config = getConfig({
       BETTERCHAT_HOST: '127.0.0.1',
       BETTERCHAT_PORT: '3200',
+      BETTERCHAT_STATE_DIR: '/tmp/betterchat-state',
       BETTERCHAT_UPSTREAM_URL: 'http://127.0.0.1:3100/',
       BETTERCHAT_SESSION_SECRET: 'secret',
       BETTERCHAT_SESSION_TTL_SECONDS: '60',
@@ -27,6 +29,7 @@ describe('config', () => {
     expect(config).toMatchObject({
       host: '127.0.0.1',
       port: 3200,
+      stateDir: '/tmp/betterchat-state',
       upstreamUrl: 'http://127.0.0.1:3100',
       sessionSecret: 'secret',
       sessionTtlSeconds: 60,

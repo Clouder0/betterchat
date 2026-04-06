@@ -6,6 +6,7 @@ import { buildSession, deserializeSessionCookie, serializeSessionCookie, session
 const config: BetterChatConfig = {
   host: '127.0.0.1',
   port: 3200,
+  stateDir: '/tmp/betterchat-session-test-state',
   upstreamUrl: 'http://127.0.0.1:3100',
   upstreamRequestTimeoutMs: 15_000,
   upstreamMediaTimeoutMs: 30_000,

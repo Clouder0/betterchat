@@ -1,6 +1,7 @@
 export type BetterChatConfig = {
   host: string;
   port: number;
+  stateDir: string;
   upstreamUrl: string;
   upstreamRequestTimeoutMs: number;
   upstreamMediaTimeoutMs: number;
@@ -22,6 +23,7 @@ const DEFAULT_MESSAGE_PAGE_SIZE = 50;
 const DEFAULT_UPSTREAM_REQUEST_TIMEOUT_MS = 15_000;
 const DEFAULT_UPSTREAM_MEDIA_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+const DEFAULT_STATE_DIR = '.runtime';
 
 const parsePositiveInteger = (value: string | undefined, fallback: number, name: string): number => {
   if (value === undefined || value.trim().length === 0) {
@@ -93,6 +95,7 @@ export const getConfig = (env: NodeJS.ProcessEnv = process.env): BetterChatConfi
   return {
     host,
     port: parsePositiveInteger(env.BETTERCHAT_PORT, DEFAULT_PORT, 'BETTERCHAT_PORT'),
+    stateDir: env.BETTERCHAT_STATE_DIR?.trim() || DEFAULT_STATE_DIR,
     upstreamUrl: validatedUrl(env.BETTERCHAT_UPSTREAM_URL || DEFAULT_UPSTREAM_URL),
     upstreamRequestTimeoutMs: parsePositiveInteger(
       env.BETTERCHAT_UPSTREAM_REQUEST_TIMEOUT_MS,

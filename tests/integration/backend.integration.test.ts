@@ -54,6 +54,8 @@ const adminUpstream = new RocketChatRestClient(env.upstreamUrl);
 const aliceUpstream = new RocketChatRestClient(env.upstreamUrl);
 const bobUpstream = new RocketChatRestClient(env.upstreamUrl);
 const charlieUpstream = new RocketChatRestClient(env.upstreamUrl);
+const backendContainerName = process.env.BETTERCHAT_TEST_BACKEND_CONTAINER_NAME ?? 'integration-betterchat-backend-1';
+const textDecoder = new TextDecoder();
 
 let seedManifest: SeedManifest;
 
@@ -244,6 +246,20 @@ const readRocketChatSettingValue = async (settingId: string): Promise<unknown> =
 
 const writeRocketChatSettingValue = async (settingId: string, value: unknown): Promise<void> => {
   await adminUpstream.postJson(`/api/v1/settings/${encodeURIComponent(settingId)}`, { value });
+};
+
+const restartBetterChatBackend = async (): Promise<void> => {
+  const result = Bun.spawnSync(['podman', 'restart', backendContainerName], {
+    stderr: 'pipe',
+    stdout: 'pipe',
+  });
+  if (result.exitCode !== 0) {
+    throw new Error(
+      `Failed to restart BetterChat backend container ${backendContainerName}: ${textDecoder.decode(result.stderr)}`,
+    );
+  }
+
+  await waitForBetterChat(env.backendUrl);
 };
 
 const sendUpstreamThreadMessage = async (
@@ -1331,13 +1347,15 @@ describe('BetterChat backend integration', () => {
     await waitFor('deleted message is reflected in the canonical timeline', async () => {
       const timeline = await client.get<ConversationTimelineSnapshot>(`/api/conversations/${conversationId}/timeline`);
       const message = timeline.messages.find((entry) => entry.id === sent.message.id);
-      if (message) {
-        expect(message.state.deleted).toBe(true);
-        return;
-      }
-
-      expect(message).toBeUndefined();
+      expect(message).toBeDefined();
+      expect(message?.state.deleted).toBe(true);
+      expect(message?.authoredAt).toBe(sent.message.authoredAt);
     }, 20_000, 500);
+
+    const refreshedTimeline = await client.get<ConversationTimelineSnapshot>(`/api/conversations/${conversationId}/timeline`);
+    const refreshedMessage = refreshedTimeline.messages.find((entry) => entry.id === sent.message.id);
+    expect(refreshedMessage).toBeDefined();
+    expect(refreshedMessage?.state.deleted).toBe(true);
   });
 
   test('supports canonical membership commands for starred, listing, and read state', async () => {
@@ -1879,14 +1897,9 @@ describe('BetterChat backend integration', () => {
     await waitFor('deleted message is reflected in timeline', async () => {
       const timeline = await client.get<ConversationTimelineSnapshot>(`/api/conversations/${conversationId}/timeline`);
       const message = timeline.messages.find((entry) => entry.id === sent.message.id);
-      if (message) {
-        expect(message.state.deleted).toBe(true);
-        expect(message.state.edited).toBe(false);
-        return;
-      }
-
-      // Hard-deleted: message removed from timeline entirely — state.edited is moot
-      expect(message).toBeUndefined();
+      expect(message).toBeDefined();
+      expect(message?.state.deleted).toBe(true);
+      expect(message?.state.edited).toBe(false);
     }, 20_000, 500);
   }, 30_000);
 
@@ -1913,18 +1926,53 @@ describe('BetterChat backend integration', () => {
     await waitFor('deleted parent is reflected in timeline', async () => {
       const timeline = await client.get<ConversationTimelineSnapshot>(`/api/conversations/${conversationId}/timeline`);
       const parent = timeline.messages.find((entry) => entry.id === parentMessage.message.id);
-      if (parent) {
-        // Soft-deleted: parent visible as deleted, reply excerpt should show placeholder
-        expect(parent.state.deleted).toBe(true);
-        const reply = timeline.messages.find((entry) => entry.id === replyMessage.message.id);
-        expect(reply).toBeDefined();
-        expect(reply!.replyTo?.excerpt).toBe('该消息已删除。');
-        expect(reply!.replyTo?.long).toBe(false);
-        return;
-      }
-
-      // Hard-deleted: parent removed, excerpt preserved from creation time
-      expect(parent).toBeUndefined();
+      expect(parent).toBeDefined();
+      expect(parent?.state.deleted).toBe(true);
+      const reply = timeline.messages.find((entry) => entry.id === replyMessage.message.id);
+      expect(reply).toBeDefined();
+      expect(reply?.replyTo?.excerpt).toBe('该消息已删除。');
+      expect(reply?.replyTo?.long).toBe(false);
     }, 20_000, 500);
   }, 30_000);
+
+  test('deleted tombstones survive BetterChat backend restart', async () => {
+    const client = await createAliceClient();
+    const conversationId = roomByKey('publicMain').roomId;
+
+    const parentMessage = await client.post<CreateConversationMessageResponse>(
+      `/api/conversations/${conversationId}/messages`,
+      { target: { kind: 'conversation' }, content: { format: 'markdown', text: `[betterchat] restart-parent ${Date.now()}` } },
+    );
+    const replyMessage = await client.post<CreateConversationMessageResponse>(
+      `/api/conversations/${conversationId}/messages`,
+      {
+        target: { kind: 'conversation', replyToMessageId: parentMessage.message.id },
+        content: { format: 'markdown', text: `[betterchat] restart-child ${Date.now()}` },
+      },
+    );
+
+    await client.delete<DeleteMessageResponse>(`/api/conversations/${conversationId}/messages/${parentMessage.message.id}`);
+
+    await waitFor('deleted parent is reflected before restart', async () => {
+      const timeline = await client.get<ConversationTimelineSnapshot>(`/api/conversations/${conversationId}/timeline`);
+      const parent = timeline.messages.find((entry) => entry.id === parentMessage.message.id);
+      const reply = timeline.messages.find((entry) => entry.id === replyMessage.message.id);
+      expect(parent?.state.deleted).toBe(true);
+      expect(reply?.replyTo?.excerpt).toBe('该消息已删除。');
+    }, 20_000, 500);
+
+    await restartBetterChatBackend();
+
+    await waitFor('deleted tombstone survives backend restart', async () => {
+      const timeline = await client.get<ConversationTimelineSnapshot>(`/api/conversations/${conversationId}/timeline`);
+      const parent = timeline.messages.find((entry) => entry.id === parentMessage.message.id);
+      const reply = timeline.messages.find((entry) => entry.id === replyMessage.message.id);
+      expect(parent).toBeDefined();
+      expect(parent?.state.deleted).toBe(true);
+      expect(parent?.content.text).toBe('');
+      expect(reply).toBeDefined();
+      expect(reply?.replyTo?.excerpt).toBe('该消息已删除。');
+      expect(reply?.replyTo?.messageId).toBe(parentMessage.message.id);
+    }, 20_000, 500);
+  }, 60_000);
 });

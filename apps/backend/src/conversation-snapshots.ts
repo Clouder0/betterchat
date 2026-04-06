@@ -7,6 +7,12 @@ import type {
 } from '@betterchat/contracts';
 
 import { conversationCapabilitiesFrom, threadsEnabledFrom } from './capabilities';
+import type { ConversationMessageLedger } from './conversation-message-ledger';
+import {
+  findCanonicalConversationMessage,
+  findCanonicalConversationMessages,
+  mergeInitialConversationTimelineTombstones,
+} from './conversation-tombstones';
 import type { BetterChatConfig } from './config';
 import { loadConversationAuthorizationContext } from './conversation-authorization';
 import {
@@ -121,19 +127,26 @@ const fetchParentMessages = async (
   client: RocketChatClient,
   session: UpstreamSession,
   messageIds: string[],
+  conversationId?: string,
+  ledger?: ConversationMessageLedger,
 ): Promise<Map<string, UpstreamMessage>> => {
-  const parentMessages = new Map<string, UpstreamMessage>();
+  if (!conversationId) {
+    const parentMessages = new Map<string, UpstreamMessage>();
 
-  await Promise.all(
-    messageIds.map(async (messageId) => {
-      const message = await client.findMessage(session, messageId);
-      if (message) {
-        parentMessages.set(messageId, message);
-      }
-    }),
-  );
+    await Promise.all(
+      messageIds.map(async (messageId) => {
+        const message = await client.findMessage(session, messageId);
+        if (message) {
+          ledger?.observe(message);
+          parentMessages.set(messageId, message);
+        }
+      }),
+    );
 
-  return parentMessages;
+    return parentMessages;
+  }
+
+  return findCanonicalConversationMessages(client, session, conversationId, messageIds, ledger);
 };
 
 const buildInboxByConversationId = (
@@ -157,6 +170,7 @@ export const buildDirectorySnapshotState = async (
   client: RocketChatClient,
   session: UpstreamSession,
   facts?: SnapshotFactCache,
+  _ledger?: ConversationMessageLedger,
 ): Promise<DirectorySnapshotState> => {
   const [subscriptionsResponse, roomsResponse, meResponse] = await Promise.all([
     facts ? facts.getSubscriptions(client, session) : client.getSubscriptions(session),
@@ -195,6 +209,7 @@ export const buildDirectoryEntryState = async (
   session: UpstreamSession,
   conversationId: string,
   facts?: SnapshotFactCache,
+  _ledger?: ConversationMessageLedger,
 ): Promise<DirectoryEntryState> => {
   let subscription: UpstreamSubscription;
   try {
@@ -250,6 +265,7 @@ export const buildConversationSnapshotState = async (
   session: UpstreamSession,
   conversationId: string,
   facts?: SnapshotFactCache,
+  _ledger?: ConversationMessageLedger,
 ): Promise<ConversationSnapshotState> => {
   const context = await loadConversationAuthorizationContext(client, session, conversationId, facts);
   const counterpartUserId = counterpartUserIdFrom(context.room, context.subscription, session);
@@ -298,6 +314,7 @@ export const buildConversationTimelineSnapshot = async (
     limit: config.defaultMessagePageSize,
   },
   facts?: SnapshotFactCache,
+  ledger?: ConversationMessageLedger,
 ): Promise<ConversationTimelineSnapshot> => {
   const context = await loadConversationAuthorizationContext(client, session, conversationId, facts);
 
@@ -316,11 +333,25 @@ export const buildConversationTimelineSnapshot = async (
     unreadProjection?.firstUnreadMessageId,
     unreadProjection?.inbox.unreadMessages,
   );
-  const parentMessages = await fetchParentMessages(client, session, parentMessageIdsFrom(roomTimelinePage.messages, config.upstreamUrl));
+  ledger?.observeMany(roomTimelinePage.messages);
+  const timelineMessages = mergeInitialConversationTimelineTombstones({
+    conversationId,
+    hasMoreUpstream: roomTimelinePage.nextCursor !== undefined,
+    ledger,
+    messages: roomTimelinePage.messages,
+    pageOffset: page.offset,
+  });
+  const parentMessages = await fetchParentMessages(
+    client,
+    session,
+    parentMessageIdsFrom(timelineMessages, config.upstreamUrl),
+    conversationId,
+    ledger,
+  );
   const normalized = normalizeConversationTimeline(
     config.upstreamUrl,
     context.room._id,
-    roomTimelinePage.messages,
+    timelineMessages,
     parentMessages,
     context,
     unreadProjection?.firstUnreadMessageId,
@@ -344,6 +375,7 @@ export const buildThreadConversationTimelineSnapshot = async (
     limit: config.defaultMessagePageSize,
   },
   facts?: SnapshotFactCache,
+  ledger?: ConversationMessageLedger,
 ): Promise<ConversationTimelineSnapshot> => {
   const context = await loadConversationAuthorizationContext(client, session, conversationId, facts);
   if (!threadsEnabledFrom(context.settings)) {
@@ -352,6 +384,8 @@ export const buildThreadConversationTimelineSnapshot = async (
 
   const parentMessage = await getThreadRootMessage(client, session, conversationId, threadId);
   const messagesResponse = await client.getThreadMessages(session, threadId, page.limit, page.offset);
+  ledger?.observe(parentMessage);
+  ledger?.observeMany(messagesResponse.messages);
   const normalized = normalizeThreadTimeline(
     config.upstreamUrl,
     context.room._id,
@@ -378,10 +412,11 @@ export const buildConversationMessageContextSnapshot = async (
     after: number;
   },
   facts?: SnapshotFactCache,
+  ledger?: ConversationMessageLedger,
 ): Promise<ConversationMessageContextSnapshot> => {
   const [context, anchorMessage] = await Promise.all([
     loadConversationAuthorizationContext(client, session, conversationId, facts),
-    client.findMessage(session, messageId),
+    findCanonicalConversationMessage(client, session, conversationId, messageId, ledger),
   ]);
 
   if (!anchorMessage || anchorMessage.rid !== conversationId) {
@@ -390,7 +425,14 @@ export const buildConversationMessageContextSnapshot = async (
   assertValidConversationContextAnchorMessage(anchorMessage, conversationId);
 
   const contextPage = await collectRoomTimelineContextPage(config, client, session, context.room.t, conversationId, messageId, contextWindow);
-  const parentMessages = await fetchParentMessages(client, session, parentMessageIdsFrom(contextPage.messages, config.upstreamUrl));
+  ledger?.observeMany(contextPage.messages);
+  const parentMessages = await fetchParentMessages(
+    client,
+    session,
+    parentMessageIdsFrom(contextPage.messages, config.upstreamUrl),
+    conversationId,
+    ledger,
+  );
   const normalizedTimeline = normalizeConversationTimeline(
     config.upstreamUrl,
     context.room._id,

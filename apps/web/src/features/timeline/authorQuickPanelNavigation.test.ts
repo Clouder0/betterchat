@@ -110,7 +110,7 @@ describe('authorQuickPanelNavigation', () => {
 		).toEqual(['message-1', 'message-2']);
 	});
 
-	it('does not group a deleted message with its predecessor', () => {
+	it('keeps a deleted message visually grouped with a same-author predecessor inside the grouping window', () => {
 		expect(
 			shouldVisuallyGroupTimelineMessages(
 				createMessage({
@@ -127,10 +127,10 @@ describe('authorQuickPanelNavigation', () => {
 					flags: { edited: false, deleted: true },
 				},
 			),
-		).toBe(false);
+		).toBe(true);
 	});
 
-	it('does not group a message with a deleted predecessor', () => {
+	it('keeps a same-author message visually grouped after a deleted predecessor inside the grouping window', () => {
 		expect(
 			shouldVisuallyGroupTimelineMessages(
 				{
@@ -147,10 +147,10 @@ describe('authorQuickPanelNavigation', () => {
 					id: 'message-2',
 				}),
 			),
-		).toBe(false);
+		).toBe(true);
 	});
 
-	it('treats deleted messages as group boundaries in author-navigable collection', () => {
+	it('does not let a deleted same-author continuation split the author-navigable visual group', () => {
 		const messages = [
 			createMessage({
 				authorId: 'user-a',
@@ -178,7 +178,7 @@ describe('authorQuickPanelNavigation', () => {
 				currentUserId: 'current-user',
 				messages,
 			}),
-		).toEqual(['message-1', 'message-2', 'message-3']);
+		).toEqual(['message-1']);
 	});
 
 	it('resolves author-lane travel across grouped messages instead of landing on continuations', () => {

@@ -1,7 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 
 import type { UpstreamSession } from './session';
-import { parsePresenceChangedEvent, parseStreamCollectionEvent, reduceTypingParticipants, UpstreamRealtimeBridge } from './upstream-realtime';
+import {
+  parsePresenceChangedEvent,
+  parseStreamCollectionEvent,
+  reduceTypingParticipants,
+  type UpstreamRealtimeCallbacks,
+  UpstreamRealtimeBridge,
+} from './upstream-realtime';
 import type { RocketChatClient } from './upstream';
 
 const waitForCondition = async (predicate: () => boolean, timeoutMs = 1_000): Promise<void> => {
@@ -18,6 +24,21 @@ const waitForCondition = async (predicate: () => boolean, timeoutMs = 1_000): Pr
 
   throw new Error(`Condition did not become true within ${timeoutMs}ms`);
 };
+
+const createCallbacks = (
+  overrides: Partial<UpstreamRealtimeCallbacks> = {},
+): UpstreamRealtimeCallbacks => ({
+  onCapabilitiesChanged: () => undefined,
+  onError: () => undefined,
+  onHealthy: () => undefined,
+  onMessagesDeleted: () => undefined,
+  onPresenceChanged: () => undefined,
+  onRoomChanged: () => undefined,
+  onSessionInvalidated: () => undefined,
+  onSidebarChanged: () => undefined,
+  onTypingChanged: () => undefined,
+  ...overrides,
+});
 
 describe('upstream realtime helpers', () => {
   test('parses DDP stream collection payloads that match BetterChat subscriptions', () => {
@@ -185,16 +206,7 @@ describe('upstream realtime helpers', () => {
       },
     });
 
-    const callbacks = {
-      onCapabilitiesChanged: () => undefined,
-      onError: () => undefined,
-      onHealthy: () => undefined,
-      onPresenceChanged: () => undefined,
-      onRoomChanged: () => undefined,
-      onSessionInvalidated: () => undefined,
-      onSidebarChanged: () => undefined,
-      onTypingChanged: () => undefined,
-    };
+    const callbacks = createCallbacks();
     const session: UpstreamSession = {
       userId: 'alice-id',
       authToken: 'auth-token',
@@ -292,16 +304,7 @@ describe('upstream realtime helpers', () => {
       },
     });
 
-    const callbacks = {
-      onCapabilitiesChanged: () => undefined,
-      onError: () => undefined,
-      onHealthy: () => undefined,
-      onPresenceChanged: () => undefined,
-      onRoomChanged: () => undefined,
-      onSessionInvalidated: () => undefined,
-      onSidebarChanged: () => undefined,
-      onTypingChanged: () => undefined,
-    };
+    const callbacks = createCallbacks();
     const session: UpstreamSession = {
       userId: 'alice-id',
       authToken: 'auth-token',
@@ -418,18 +421,11 @@ describe('upstream realtime helpers', () => {
         getMe: async () => ({ _id: 'alice-id', success: true, username: 'alice' }),
       } as unknown as RocketChatClient,
       session,
-      {
-        onCapabilitiesChanged: () => undefined,
-        onError: () => undefined,
-        onHealthy: () => undefined,
-        onPresenceChanged: () => undefined,
+      createCallbacks({
         onRoomChanged: (roomId, reason) => {
           roomEvents.push({ roomId, reason });
         },
-        onSessionInvalidated: () => undefined,
-        onSidebarChanged: () => undefined,
-        onTypingChanged: () => undefined,
-      },
+      }),
     );
 
     try {
@@ -508,18 +504,11 @@ describe('upstream realtime helpers', () => {
         getMe: async () => ({ _id: 'alice-id', success: true, username: 'alice' }),
       } as unknown as RocketChatClient,
       session,
-      {
-        onCapabilitiesChanged: () => undefined,
-        onError: () => undefined,
-        onHealthy: () => undefined,
-        onPresenceChanged: () => undefined,
-        onRoomChanged: () => undefined,
-        onSessionInvalidated: () => undefined,
+      createCallbacks({
         onSidebarChanged: (options) => {
           sidebarEvents.push(options ?? {});
         },
-        onTypingChanged: () => undefined,
-      },
+      }),
     );
 
     try {
@@ -608,18 +597,11 @@ describe('upstream realtime helpers', () => {
         getMe: async () => ({ _id: 'alice-id', success: true, username: 'alice' }),
       } as unknown as RocketChatClient,
       session,
-      {
+      createCallbacks({
         onCapabilitiesChanged: () => {
           capabilityEvents.push('capabilities');
         },
-        onError: () => undefined,
-        onHealthy: () => undefined,
-        onPresenceChanged: () => undefined,
-        onRoomChanged: () => undefined,
-        onSessionInvalidated: () => undefined,
-        onSidebarChanged: () => undefined,
-        onTypingChanged: () => undefined,
-      },
+      }),
     );
 
     try {

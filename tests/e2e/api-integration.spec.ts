@@ -1,5 +1,7 @@
+import { spawnSync } from 'node:child_process';
+
 import { expect, test, type Locator, type Page } from '@playwright/test';
-import type { ConversationTimelineSnapshot, CreateConversationMessageResponse, DirectorySnapshot } from '@betterchat/contracts';
+import type { ConversationTimelineSnapshot, CreateConversationMessageResponse, DeleteMessageResponse, DirectorySnapshot } from '@betterchat/contracts';
 
 import {
 	betterChatGetJson,
@@ -14,14 +16,24 @@ import {
 import {
 	createLargeBmpFixture,
 	createLargePngFixture,
+	collapseSidebar,
+	isSidebarCollapsed,
 	openRoom,
+	readSidebarShellState,
 	readTimelineBottomGap,
 	scrollTimelineToBottom,
 	tinyPngFixture,
 	waitForRoomLoadingToFinish,
+	waitForSidebarCollapsedSettle,
+	waitForSidebarExpandedPreview,
+	waitForSidebarPreviewState,
+	waitForSidebarTransitionEnd,
 } from './test-helpers';
 
 test.skip(!apiModeEnabled, 'API-mode suite');
+
+const backendContainerName = process.env.BETTERCHAT_TEST_BACKEND_CONTAINER_NAME ?? 'integration-betterchat-backend-1';
+const betterChatApiBaseUrl = process.env.BETTERCHAT_E2E_API_BASE_URL ?? 'http://127.0.0.1:3200';
 
 const conversationMessageBody = ({
 	replyToMessageId,
@@ -67,6 +79,30 @@ const markConversationUnread = ({
 
 const readDirectory = (session: Awaited<ReturnType<typeof createBetterChatSession>>) =>
 	betterChatGetJson<DirectorySnapshot>(session, '/api/directory');
+
+const restartBetterChatBackend = async (): Promise<void> => {
+	const result = spawnSync('podman', ['restart', backendContainerName], {
+		encoding: 'utf8',
+	});
+	if (result.status !== 0) {
+		throw new Error(`Failed to restart BetterChat backend container ${backendContainerName}: ${result.stderr}`);
+	}
+
+	await expect.poll(async () => {
+		try {
+			const response = await fetch(new URL('/api/public/bootstrap', betterChatApiBaseUrl));
+			if (!response.ok) {
+				return false;
+			}
+			const payload = await response.json() as { ok?: boolean };
+			return payload.ok === true;
+		} catch {
+			return false;
+		}
+	}, {
+		timeout: 20_000,
+	}).toBe(true);
+};
 
 const readSidebarSectionOrder = async (page: Page, section: 'dms' | 'favorites' | 'rooms') =>
 	page.getByTestId(`sidebar-section-${section}`).locator('button[data-testid^="sidebar-room-"]').evaluateAll((nodes) =>
@@ -314,6 +350,132 @@ const resolveDirectoryAttention = (entry: DirectorySnapshot['entries'][number] |
 };
 
 test.describe('api integration', () => {
+	test('collapses sidebar by dragging resize rail past snap threshold and settles fully collapsed', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 980 });
+		await loginAsApiUser(page, {
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		await waitForRoomLoadingToFinish(page);
+
+		const sidebar = page.getByTestId('app-sidebar');
+		const resizeHandle = page.getByTestId('sidebar-resize-handle');
+		const handleBox = await resizeHandle.boundingBox();
+		expect(handleBox).not.toBeNull();
+		if (!handleBox) {
+			throw new Error('sidebar resize handle bounds were unavailable');
+		}
+		const sidebarBox = await sidebar.boundingBox();
+		expect(sidebarBox).not.toBeNull();
+		if (!sidebarBox) {
+			throw new Error('sidebar bounds were unavailable');
+		}
+		const handleCenterX = handleBox.x + handleBox.width / 2;
+		const handleCenterY = handleBox.y + handleBox.height / 2;
+		const intermediateCloseX = handleCenterX - (sidebarBox.width - 160);
+
+		await page.mouse.move(handleCenterX, handleCenterY);
+		await page.mouse.down();
+		await page.mouse.move(intermediateCloseX, handleCenterY, { steps: 10 });
+		await waitForSidebarPreviewState(page, {
+			collapsed: false,
+			maxWidth: 176,
+			minWidth: 144,
+			searchVisible: true,
+		});
+		await page.mouse.move(20, handleCenterY, { steps: 12 });
+		await waitForSidebarPreviewState(page, {
+			collapsed: true,
+			maxWidth: 104,
+			minWidth: 0,
+			searchVisible: false,
+		});
+		await page.mouse.up();
+
+		await waitForSidebarCollapsedSettle(page);
+		expect(await isSidebarCollapsed(page)).toBe(true);
+		expect(await readSidebarShellState(page)).toEqual({
+			collapsed: true,
+			searchVisible: false,
+			sidebarClientWidth: 0,
+			sidebarWidth: 0,
+		});
+	});
+
+	test('expands the collapsed sidebar on single click and reveals sidebar content', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 980 });
+		await loginAsApiUser(page, {
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		await waitForRoomLoadingToFinish(page);
+
+		const sidebar = page.getByTestId('app-sidebar');
+		const resizeHandle = page.getByTestId('sidebar-resize-handle');
+		const widthBeforeCollapse = (await sidebar.boundingBox())!.width;
+
+		await collapseSidebar(page);
+		expect(await isSidebarCollapsed(page)).toBe(true);
+
+		await resizeHandle.click();
+		await waitForSidebarTransitionEnd(page);
+
+		expect(await isSidebarCollapsed(page)).toBe(false);
+		await expect(page.getByTestId('sidebar-search')).toBeVisible();
+		await expect(page.locator('button[data-testid^="sidebar-room-"]').first()).toBeVisible();
+
+		const widthAfterExpand = (await sidebar.boundingBox())!.width;
+		expect(widthAfterExpand).toBeGreaterThan(200);
+		expect(Math.abs(widthAfterExpand - widthBeforeCollapse)).toBeLessThan(16);
+	});
+
+	test('reveals sidebar content during drag-open preview before pointer release', async ({ page }) => {
+		await page.setViewportSize({ width: 1440, height: 980 });
+		await loginAsApiUser(page, {
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		await waitForRoomLoadingToFinish(page);
+
+		await collapseSidebar(page);
+		expect(await isSidebarCollapsed(page)).toBe(true);
+
+		const resizeHandle = page.getByTestId('sidebar-resize-handle');
+		const handleBox = await resizeHandle.boundingBox();
+		expect(handleBox).not.toBeNull();
+		if (!handleBox) {
+			throw new Error('sidebar resize handle bounds were unavailable');
+		}
+		const handleCenterX = handleBox.x + handleBox.width / 2;
+		const handleCenterY = handleBox.y + handleBox.height / 2;
+		const intermediateOpenX = handleCenterX + 160;
+
+		await page.mouse.move(handleCenterX, handleCenterY);
+		await page.mouse.down();
+		await page.mouse.move(intermediateOpenX, handleCenterY, { steps: 10 });
+		await waitForSidebarPreviewState(page, {
+			collapsed: false,
+			maxWidth: 176,
+			minWidth: 144,
+			searchVisible: true,
+		});
+		await page.mouse.move(handleBox.x + 300, handleCenterY, { steps: 12 });
+		await waitForSidebarExpandedPreview(page);
+		await page.mouse.move(20, handleCenterY, { steps: 12 });
+		await waitForSidebarPreviewState(page, {
+			collapsed: true,
+			maxWidth: 104,
+			minWidth: 0,
+			searchVisible: false,
+		});
+		await page.mouse.move(handleBox.x + 300, handleCenterY, { steps: 12 });
+		await waitForSidebarExpandedPreview(page);
+		await page.mouse.up();
+
+		expect(await isSidebarCollapsed(page)).toBe(false);
+		await expect(page.getByTestId('sidebar-search')).toBeVisible();
+	});
+
 	test('does not replay watch commands after realtime updates advance cached versions', async ({ page }) => {
 		const manifest = readSeedManifest();
 		const room = manifest.rooms.publicEmpty;
@@ -346,6 +508,135 @@ test.describe('api integration', () => {
 		await page.waitForTimeout(250);
 
 		expect(await readRecordedRealtimeWatchCommands(page)).toEqual([]);
+	});
+
+
+	test('persists deleted-message tombstones across browser refresh in API mode', async ({ page }) => {
+		const manifest = readSeedManifest();
+		const room = manifest.rooms.publicMain;
+		const aliceSession = await createBetterChatSession({
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		const probeText = `[betterchat][e2e] tombstone persistence ${Date.now()}`;
+		const sent = await betterChatPostJson<CreateConversationMessageResponse>(
+			aliceSession,
+			`/api/conversations/${room.roomId}/messages`,
+			conversationMessageBody({ text: probeText }),
+		);
+		const messageId = sent.message.id;
+		if (!messageId) {
+			throw new Error('Expected BetterChat send response to include a canonical message id.');
+		}
+
+		await loginAsApiUser(page, {
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		await openRoom(page, room.roomId);
+
+		const row = page.getByTestId(`timeline-message-${messageId}`);
+		await expect(row).toContainText(probeText);
+
+		const deleted = await betterChatRequestJson<DeleteMessageResponse>(aliceSession, {
+			body: {},
+			method: 'DELETE',
+			path: `/api/conversations/${room.roomId}/messages/${messageId}`,
+		});
+		expect(deleted.messageId).toBe(messageId);
+
+		await expect.poll(async () => {
+			const timeline = await betterChatGetJson<ConversationTimelineSnapshot>(
+				aliceSession,
+				`/api/conversations/${room.roomId}/timeline`,
+			);
+			const deletedMessage = timeline.messages.find((message) => message.id === messageId);
+			if (!deletedMessage) {
+				return null;
+			}
+
+			return {
+				authoredAt: deletedMessage.authoredAt,
+				deleted: deletedMessage.state.deleted,
+				text: deletedMessage.content.text,
+			};
+		}).toEqual({
+			authoredAt: sent.message.authoredAt,
+			deleted: true,
+			text: '',
+		});
+
+		await expect(row).toContainText('该消息已删除。', { timeout: 10_000 });
+		await expect(row).not.toContainText(probeText);
+
+		await page.reload();
+		await waitForRoomLoadingToFinish(page);
+
+		const reloadedRow = page.getByTestId(`timeline-message-${messageId}`);
+		await expect(reloadedRow).toContainText('该消息已删除。', { timeout: 10_000 });
+		await expect(reloadedRow).not.toContainText(probeText);
+	});
+
+	test('persists deleted-message tombstones across BetterChat backend restart in API mode', async ({ page }) => {
+		const manifest = readSeedManifest();
+		const room = manifest.rooms.publicMain;
+		const aliceSession = await createBetterChatSession({
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		const probeText = `[betterchat][e2e] tombstone restart persistence ${Date.now()}`;
+		const sent = await betterChatPostJson<CreateConversationMessageResponse>(
+			aliceSession,
+			`/api/conversations/${room.roomId}/messages`,
+			conversationMessageBody({ text: probeText }),
+		);
+		const messageId = sent.message.id;
+		if (!messageId) {
+			throw new Error('Expected BetterChat send response to include a canonical message id.');
+		}
+
+		await loginAsApiUser(page, {
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		await openRoom(page, room.roomId);
+
+		const row = page.getByTestId(`timeline-message-${messageId}`);
+		await expect(row).toContainText(probeText);
+
+		await betterChatRequestJson<DeleteMessageResponse>(aliceSession, {
+			body: {},
+			method: 'DELETE',
+			path: `/api/conversations/${room.roomId}/messages/${messageId}`,
+		});
+
+		await expect(row).toContainText('该消息已删除。', { timeout: 10_000 });
+
+		await restartBetterChatBackend();
+
+		await page.reload();
+		await waitForRoomLoadingToFinish(page);
+
+		await expect.poll(async () => {
+			const timeline = await betterChatGetJson<ConversationTimelineSnapshot>(
+				aliceSession,
+				`/api/conversations/${room.roomId}/timeline`,
+			);
+			const deletedMessage = timeline.messages.find((message) => message.id === messageId);
+			return deletedMessage
+				? {
+					deleted: deletedMessage.state.deleted,
+					text: deletedMessage.content.text,
+				}
+				: null;
+		}).toEqual({
+			deleted: true,
+			text: '',
+		});
+
+		const reloadedRow = page.getByTestId(`timeline-message-${messageId}`);
+		await expect(reloadedRow).toContainText('该消息已删除。', { timeout: 10_000 });
+		await expect(reloadedRow).not.toContainText(probeText);
 	});
 
 	test('keeps a text send on a single visible row while canonical polling catches up before the send response resolves', async ({ page }) => {

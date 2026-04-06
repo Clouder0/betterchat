@@ -65,6 +65,7 @@ export const startServer = (): void => {
     logger.info('server_stopping', { signal });
 
     streamGateway.stop();
+    snapshotService.close();
     server.stop(true);
 
     logger.info('server_stopped', { signal });
