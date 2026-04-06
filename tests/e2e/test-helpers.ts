@@ -245,6 +245,110 @@ export const scrollTimelineToBottom = async (page: Page) => {
 export const readTimelineBottomGap = async (timeline: Locator) =>
 	timeline.evaluate((node) => Math.max(node.scrollHeight - (node.scrollTop + node.clientHeight), 0));
 
+const commandOrControl = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+export const waitForSidebarTransitionEnd = async (page: Page) => {
+	await expect
+		.poll(async () => {
+			const workspace = page.getByTestId('app-workspace');
+			return workspace.getAttribute('data-sidebar-transitioning');
+		})
+		.not.toBe('true');
+};
+
+export const collapseSidebar = async (page: Page) => {
+	await page.keyboard.press(`${commandOrControl}+b`);
+	await waitForSidebarTransitionEnd(page);
+};
+
+export const expandSidebar = async (page: Page) => {
+	await page.keyboard.press(`${commandOrControl}+b`);
+	await waitForSidebarTransitionEnd(page);
+};
+
+export const isSidebarCollapsed = async (page: Page): Promise<boolean> => {
+	const collapsed = await page.getByTestId('app-sidebar').getAttribute('data-collapsed');
+	return collapsed === 'true';
+};
+
+export const readSidebarShellState = async (page: Page) =>
+	page.evaluate(() => {
+		const sidebar = document.querySelector('[data-testid="app-sidebar"]');
+		const search = document.querySelector('[data-testid="sidebar-search"]');
+		if (!(sidebar instanceof HTMLElement) || !(search instanceof HTMLElement)) {
+			return null;
+		}
+
+		const sidebarStyle = window.getComputedStyle(sidebar);
+		const searchStyle = window.getComputedStyle(search);
+		const rect = sidebar.getBoundingClientRect();
+		return {
+			collapsed: sidebar.getAttribute('data-collapsed') === 'true',
+			searchVisible:
+				rect.width > 0 &&
+				rect.height > 0 &&
+				sidebarStyle.visibility !== 'hidden' &&
+				searchStyle.visibility !== 'hidden' &&
+				searchStyle.display !== 'none' &&
+				Number.parseFloat(searchStyle.opacity || '1') !== 0,
+			sidebarClientWidth: sidebar.clientWidth,
+			sidebarWidth: rect.width,
+		};
+	});
+
+export const waitForSidebarCollapsedShell = async (page: Page) => {
+	await expect
+		.poll(async () => readSidebarShellState(page))
+		.toEqual({
+			collapsed: true,
+			searchVisible: false,
+			sidebarClientWidth: 0,
+			sidebarWidth: 0,
+		});
+};
+
+export const waitForSidebarPreviewState = async (
+	page: Page,
+	{
+		collapsed,
+		maxWidth,
+		minWidth,
+		searchVisible,
+	}: {
+		collapsed: boolean;
+		maxWidth: number;
+		minWidth: number;
+		searchVisible: boolean;
+	},
+) => {
+	await expect
+		.poll(async () => {
+			const state = await readSidebarShellState(page);
+			return Boolean(
+				state &&
+					state.collapsed === collapsed &&
+					state.searchVisible === searchVisible &&
+					state.sidebarWidth >= minWidth &&
+					state.sidebarWidth <= maxWidth,
+			);
+		})
+		.toBe(true);
+};
+
+export const waitForSidebarExpandedPreview = async (page: Page) => {
+	await waitForSidebarPreviewState(page, {
+		collapsed: false,
+		maxWidth: Number.POSITIVE_INFINITY,
+		minWidth: 200,
+		searchVisible: true,
+	});
+};
+
+export const waitForSidebarCollapsedSettle = async (page: Page) => {
+	await waitForSidebarTransitionEnd(page);
+	await waitForSidebarCollapsedShell(page);
+};
+
 export const waitForRoomLoadingToFinish = async (page: Page) => {
 	await expect(page.getByTestId('room-loading-skeleton')).toHaveCount(0);
 	await expect

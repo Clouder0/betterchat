@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 
 import {
+	clampSidebarPreviewWidth,
 	clampSidebarWidth,
 	formatSidebarWidthCssValue,
+	resolveSidebarPreviewWidth,
 	resolveSidebarResizeWidth,
 	resolveSidebarWidthBounds,
 } from './sidebarWidthPreference';
@@ -35,6 +37,27 @@ describe('sidebarWidthPreference', () => {
 				startX: 300,
 			}),
 		).toBe(420);
+	});
+
+	it('allows continuous preview widths between zero and the settled minimum while dragging', () => {
+		expect(
+			resolveSidebarPreviewWidth({
+				currentX: 168,
+				max: 420,
+				startWidth: 292,
+				startX: 300,
+			}),
+		).toBe(160);
+		expect(
+			resolveSidebarPreviewWidth({
+				currentX: 20,
+				max: 420,
+				startWidth: 0,
+				startX: 0,
+			}),
+		).toBe(20);
+		expect(clampSidebarPreviewWidth(-32, 420)).toBe(0);
+		expect(clampSidebarPreviewWidth(999, 420)).toBe(420);
 	});
 
 	it('formats sidebar widths as pixel CSS values', () => {

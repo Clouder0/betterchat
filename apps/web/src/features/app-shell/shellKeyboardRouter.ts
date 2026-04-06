@@ -14,6 +14,9 @@ export type ShellKeyboardAction =
 	  }
 	| {
 			kind: 'focus-composer';
+	  }
+	| {
+			kind: 'toggle-sidebar-collapse';
 	  };
 
 const isPlainNavigationKey = (key: string) => ['ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'End', 'Home'].includes(key);
@@ -45,6 +48,13 @@ export const resolveShellKeyboardAction = ({
 	if (isSettingsShortcut) {
 		return {
 			kind: 'open-settings',
+		};
+	}
+
+	const isCollapseShortcut = (metaKey || ctrlKey) && !altKey && !shiftKey && normalizedKey === 'b';
+	if (isCollapseShortcut) {
+		return {
+			kind: 'toggle-sidebar-collapse',
 		};
 	}
 

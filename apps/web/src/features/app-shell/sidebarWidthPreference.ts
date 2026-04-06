@@ -14,6 +14,8 @@ const isStoredSidebarWidth = (value: unknown): value is number => typeof value =
 export const clampSidebarWidth = (value: number, bounds: { max: number; min: number }) =>
 	Math.min(bounds.max, Math.max(bounds.min, Math.round(value)));
 
+export const clampSidebarPreviewWidth = (value: number, max: number) => Math.min(max, Math.max(0, Math.round(value)));
+
 export const formatSidebarWidthCssValue = (value: number) => `${Math.round(value)}px`;
 
 export const resolveSidebarResizeWidth = ({
@@ -27,6 +29,18 @@ export const resolveSidebarResizeWidth = ({
 	startWidth: number;
 	startX: number;
 }) => clampSidebarWidth(startWidth + (currentX - startX), bounds);
+
+export const resolveSidebarPreviewWidth = ({
+	currentX,
+	max,
+	startWidth,
+	startX,
+}: {
+	currentX: number;
+	max: number;
+	startWidth: number;
+	startX: number;
+}) => clampSidebarPreviewWidth(startWidth + (currentX - startX), max);
 
 export const resolveSidebarWidthBounds = ({
 	infoSidebarOpen,

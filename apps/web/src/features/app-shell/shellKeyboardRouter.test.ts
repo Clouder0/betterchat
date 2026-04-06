@@ -104,6 +104,49 @@ describe('resolveShellKeyboardAction', () => {
 		});
 	});
 
+	it('resolves Ctrl+B as toggle-sidebar-collapse regardless of focus state', () => {
+		expect(
+			resolveShellKeyboardAction({
+				altKey: false,
+				ctrlKey: true,
+				isNeutralShellFocus: true,
+				key: 'b',
+				metaKey: false,
+				shiftKey: false,
+			}),
+		).toEqual({
+			kind: 'toggle-sidebar-collapse',
+		});
+
+		expect(
+			resolveShellKeyboardAction({
+				altKey: false,
+				ctrlKey: true,
+				isNeutralShellFocus: false,
+				key: 'b',
+				metaKey: false,
+				shiftKey: false,
+			}),
+		).toEqual({
+			kind: 'toggle-sidebar-collapse',
+		});
+	});
+
+	it('resolves Meta+B as toggle-sidebar-collapse', () => {
+		expect(
+			resolveShellKeyboardAction({
+				altKey: false,
+				ctrlKey: false,
+				isNeutralShellFocus: false,
+				key: 'b',
+				metaKey: true,
+				shiftKey: false,
+			}),
+		).toEqual({
+			kind: 'toggle-sidebar-collapse',
+		});
+	});
+
 	it('ignores plain navigation when focus is already inside a shell region', () => {
 		expect(
 			resolveShellKeyboardAction({
