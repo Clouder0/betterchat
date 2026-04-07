@@ -39,6 +39,7 @@ import {
   waitForBetterChat,
   waitForRocketChat,
 } from '../../packages/test-utils/src';
+import { restartBetterChatBackendService } from '../backend-stack-control.mjs';
 
 type ApiErrorResponse = {
   ok: false;
@@ -54,9 +55,6 @@ const adminUpstream = new RocketChatRestClient(env.upstreamUrl);
 const aliceUpstream = new RocketChatRestClient(env.upstreamUrl);
 const bobUpstream = new RocketChatRestClient(env.upstreamUrl);
 const charlieUpstream = new RocketChatRestClient(env.upstreamUrl);
-const backendContainerName = process.env.BETTERCHAT_TEST_BACKEND_CONTAINER_NAME ?? 'integration-betterchat-backend-1';
-const textDecoder = new TextDecoder();
-
 let seedManifest: SeedManifest;
 
 const roomByKey = (roomKey: keyof SeedManifest['rooms']) => seedManifest.rooms[roomKey];
@@ -249,16 +247,7 @@ const writeRocketChatSettingValue = async (settingId: string, value: unknown): P
 };
 
 const restartBetterChatBackend = async (): Promise<void> => {
-  const result = Bun.spawnSync(['podman', 'restart', backendContainerName], {
-    stderr: 'pipe',
-    stdout: 'pipe',
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `Failed to restart BetterChat backend container ${backendContainerName}: ${textDecoder.decode(result.stderr)}`,
-    );
-  }
-
+  restartBetterChatBackendService();
   await waitForBetterChat(env.backendUrl);
 };
 

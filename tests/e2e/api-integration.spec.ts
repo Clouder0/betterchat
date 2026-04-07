@@ -1,7 +1,6 @@
-import { spawnSync } from 'node:child_process';
-
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { ConversationTimelineSnapshot, CreateConversationMessageResponse, DeleteMessageResponse, DirectorySnapshot } from '@betterchat/contracts';
+import { restartBetterChatBackendService } from '../backend-stack-control.mjs';
 
 import {
 	betterChatGetJson,
@@ -32,7 +31,6 @@ import {
 
 test.skip(!apiModeEnabled, 'API-mode suite');
 
-const backendContainerName = process.env.BETTERCHAT_TEST_BACKEND_CONTAINER_NAME ?? 'integration-betterchat-backend-1';
 const betterChatApiBaseUrl = process.env.BETTERCHAT_E2E_API_BASE_URL ?? 'http://127.0.0.1:3200';
 
 const conversationMessageBody = ({
@@ -81,13 +79,7 @@ const readDirectory = (session: Awaited<ReturnType<typeof createBetterChatSessio
 	betterChatGetJson<DirectorySnapshot>(session, '/api/directory');
 
 const restartBetterChatBackend = async (): Promise<void> => {
-	const result = spawnSync('podman', ['restart', backendContainerName], {
-		encoding: 'utf8',
-	});
-	if (result.status !== 0) {
-		throw new Error(`Failed to restart BetterChat backend container ${backendContainerName}: ${result.stderr}`);
-	}
-
+	restartBetterChatBackendService();
 	await expect.poll(async () => {
 		try {
 			const response = await fetch(new URL('/api/public/bootstrap', betterChatApiBaseUrl));
