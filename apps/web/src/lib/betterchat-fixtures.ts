@@ -106,6 +106,9 @@ const publicBootstrap: PublicBootstrap = {
 		version: '7.6.0',
 		siteName: '北域协作',
 	},
+	session: {
+		authenticated: false,
+	},
 	login: {
 		passwordEnabled: true,
 		registeredProviders: [
@@ -1785,7 +1788,13 @@ const buildFixtureConversationMentionCandidates = ({
 
 export const fixtureBetterChatService = {
 	mode: 'fixture' as const,
-	publicBootstrap: async () => cloneValue(publicBootstrap),
+	publicBootstrap: async () =>
+		cloneValue({
+			...publicBootstrap,
+			session: {
+				authenticated: readStoredSessionUser() !== null,
+			},
+		}),
 	login: async (request: LoginRequest): Promise<LoginResponse> => {
 		if (!request.login.trim() || !request.password.trim()) {
 			throw {
