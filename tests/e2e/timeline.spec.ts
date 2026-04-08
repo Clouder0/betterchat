@@ -7,8 +7,10 @@ import {
 	loginAsFixtureUser,
 	openRoom,
 	pasteImageIntoComposer,
+	readTimelineViewportStateForMessage,
 	readTimelineBottomGap,
 	scrollTimelineToBottom,
+	TIMELINE_VIEWPORT_ANCHOR_TOP_BIAS,
 	tinyPngFixture,
 	waitForRoomLoadingToFinish,
 } from './test-helpers';
@@ -1813,6 +1815,53 @@ test.describe('timeline behavior', () => {
 		await page.getByTestId('timeline-message-ops-005').scrollIntoViewIfNeeded();
 		await expect(page.getByTestId('timeline-message-toggle-ops-005')).toHaveText('收起');
 		await expect(page.getByTestId('timeline-message-content-ops-005')).toHaveAttribute('data-collapsed', 'false');
+	});
+
+	test('keeps the viewport anchored when folding an expanded long message from inside its body', async ({ page }) => {
+		await page.setViewportSize({
+			width: 1280,
+			height: 520,
+		});
+		await loginAsFixtureUser(page);
+
+		const timeline = page.getByTestId('timeline');
+		const longMessage = page.getByTestId('timeline-message-ops-004');
+		const toggle = page.getByTestId('timeline-message-toggle-ops-004');
+		const content = page.getByTestId('timeline-message-content-ops-004');
+
+		await longMessage.scrollIntoViewIfNeeded();
+		await expect(content).toHaveAttribute('data-collapsed', 'true');
+		await toggle.click();
+		await expect(content).toHaveAttribute('data-collapsed', 'false');
+
+		await timeline.evaluate((node) => {
+			const target = node.querySelector<HTMLElement>('[data-testid="timeline-message-ops-004"]');
+			if (!target) {
+				throw new Error('missing target message');
+			}
+
+			node.scrollTop = Math.max(target.offsetTop + 180, 0);
+		});
+
+		const beforeToggle = await readTimelineViewportStateForMessage(timeline, 'timeline-message-ops-004');
+		expect(beforeToggle.anchorMessageId).toBe('ops-004');
+		expect(beforeToggle.anchorOffset).not.toBeNull();
+
+		await toggle.evaluate((node) => {
+			(node as HTMLButtonElement).click();
+		});
+		await expect(content).toHaveAttribute('data-collapsed', 'true');
+
+		const afterToggle = await readTimelineViewportStateForMessage(timeline, 'timeline-message-ops-004');
+		const expectedScrollTop = Math.max(
+			afterToggle.targetTop +
+				Math.min(beforeToggle.anchorOffset ?? 0, Math.max(afterToggle.targetHeight - 1, 0)) -
+				TIMELINE_VIEWPORT_ANCHOR_TOP_BIAS,
+			0,
+		);
+
+		expect(afterToggle.anchorMessageId).toBe('ops-004');
+		expect(Math.abs(afterToggle.scrollTop - expectedScrollTop)).toBeLessThanOrEqual(8);
 	});
 
 	test('uses the collapsed preview itself as the expand target and does not open images before expansion', async ({ page }) => {
