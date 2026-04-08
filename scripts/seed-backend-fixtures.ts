@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { SeedManifest, SeedManifestMessage, SeedManifestRoom } from '../packages/test-utils/src';
 import {
   adminFixture,
+  BetterChatClient,
   clearSeedManifest,
   createMongoClient,
   fixtureHistoryMessages,
@@ -85,6 +86,13 @@ type SyncMessagesResponse = {
   result?: {
     updated?: MessageRecord[];
   };
+};
+
+type BetterChatTimelineSnapshot = {
+  unreadAnchorMessageId?: string;
+  messages: Array<{
+    id: string;
+  }>;
 };
 
 type SeedRoomKey = keyof typeof fixtureRooms;
@@ -447,6 +455,20 @@ const verifyExactUnreadBaseline = async ({
   if (unreadMessages.length !== 1 || unreadMessages[0]?._id !== expectedAnchorMessageId) {
     throw new Error(
       `Seed verification failed for ${roomId}: expected exact unread anchor ${expectedAnchorMessageId}, got ${JSON.stringify(unreadMessages.map((message) => message._id))}`,
+    );
+  }
+
+  const betterChatClient = new BetterChatClient(env.backendUrl);
+  await betterChatClient.login(fixtureUsers.alice.username, fixtureUsers.alice.password);
+  const timeline = await betterChatClient.get<BetterChatTimelineSnapshot>(`/api/conversations/${roomId}/timeline?limit=50`);
+  const timelineMessageIds = timeline.messages.map((message) => message.id);
+
+  if (
+    timeline.unreadAnchorMessageId !== expectedAnchorMessageId
+    || !timelineMessageIds.includes(expectedAnchorMessageId)
+  ) {
+    throw new Error(
+      `Seed verification failed for ${roomId}: BetterChat timeline expected unread anchor ${expectedAnchorMessageId}, got ${JSON.stringify({ unreadAnchorMessageId: timeline.unreadAnchorMessageId, timelineMessageIds })}`,
     );
   }
 };

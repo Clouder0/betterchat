@@ -3,8 +3,35 @@ on:
   push:
     tags: ["v*"]
 
+env:
+  BUN_TMPDIR: /tmp
+
 jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE_TOOL: "docker compose"
+      BETTERCHAT_TEST_ROCKETCHAT_LICENSE: ${{ secrets.ROCKETCHAT_TEST_LICENSE }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.6"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - run: bun install --frozen-lockfile
+      - run: bun install --cwd tests/e2e --frozen-lockfile
+      - run: cd tests/e2e && bunx playwright install --with-deps chromium
+      - run: bun run verify:ci
+      - run: bash scripts/backend-stack-start.sh
+      - run: bun run verify:integration
+      - if: always()
+        run: bash scripts/backend-stack-stop.sh
+
   release:
+    needs: [verify]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -19,9 +46,6 @@ jobs:
           node-version: "22"
           registry-url: "https://registry.npmjs.org"
       - run: bun install --frozen-lockfile
-      - run: bun run typecheck
-      - run: bun --filter @betterchat/web test
-      - run: bun --filter @betterchat/backend test
       - run: bun run build:dist
 
       - name: Publish to npm

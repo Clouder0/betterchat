@@ -5,6 +5,9 @@ on:
   pull_request:
     branches: [main]
 
+env:
+  BUN_TMPDIR: /tmp
+
 jobs:
   typecheck:
     runs-on: ubuntu-latest
@@ -14,6 +17,7 @@ jobs:
         with:
           bun-version: "1.3.6"
       - run: bun install --frozen-lockfile
+      - run: bun install --cwd tests/e2e --frozen-lockfile
       - run: bun run typecheck
 
   unit-tests:
@@ -24,12 +28,35 @@ jobs:
         with:
           bun-version: "1.3.6"
       - run: bun install --frozen-lockfile
-      - run: bun --filter @betterchat/web test
-      - run: bun --filter @betterchat/backend test
+      - run: bun run test:unit
+
+  build-dist:
+    runs-on: ubuntu-latest
+    needs: [typecheck, unit-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.6"
+      - run: bun install --frozen-lockfile
+      - run: bun run build:dist
+
+  e2e-fixture-tests:
+    runs-on: ubuntu-latest
+    needs: [typecheck, unit-tests]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.6"
+      - run: bun install --frozen-lockfile
+      - run: bun install --cwd tests/e2e --frozen-lockfile
+      - run: cd tests/e2e && bunx playwright install --with-deps chromium
+      - run: bun run test:e2e
 
   integration-tests:
     runs-on: ubuntu-latest
-    needs: [typecheck, unit-tests]
+    needs: [typecheck, unit-tests, build-dist, e2e-fixture-tests]
     env:
       COMPOSE_TOOL: "docker compose"
       BETTERCHAT_TEST_ROCKETCHAT_LICENSE: ${{ secrets.ROCKETCHAT_TEST_LICENSE }}
@@ -39,7 +66,9 @@ jobs:
         with:
           bun-version: "1.3.6"
       - run: bun install --frozen-lockfile
+      - run: bun install --cwd tests/e2e --frozen-lockfile
+      - run: cd tests/e2e && bunx playwright install --with-deps chromium
       - run: bash scripts/backend-stack-start.sh
-      - run: bash scripts/backend-integration-test.sh
+      - run: bun run verify:integration
       - if: always()
         run: bash scripts/backend-stack-stop.sh
