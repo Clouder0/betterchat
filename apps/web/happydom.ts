@@ -1,8 +1,11 @@
 import { Window } from 'happy-dom';
+import { initializeStandardsDocument } from './src/test/standardsDocument';
 
 const window = new Window({
 	url: 'http://localhost:3000',
 });
+
+initializeStandardsDocument(window);
 
 // @ts-ignore
 globalThis.window = window;
@@ -24,4 +27,3 @@ globalThis.DocumentFragment = window.DocumentFragment;
 globalThis.Text = window.Text;
 // @ts-ignore
 globalThis.location = window.location;
-
