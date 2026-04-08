@@ -4,8 +4,8 @@ import { Suspense, lazy, useMemo, useState, useCallback } from 'react';
 import type { ComponentType } from 'react';
 
 import { ThemeProvider } from '@/app/ThemeProvider';
+import { AppShellRouteFallback } from '@/app/AppShellRouteFallback';
 import { AppFrame } from '@/components/AppFrame';
-import { AppShell } from '@/features/app-shell/AppShell';
 import { LoginPage } from '@/features/session/LoginPage';
 import { ErrorBoundary } from '@/components/error/ErrorBoundary';
 import { RouteErrorFallback } from '@/components/error/RouteErrorFallback';
@@ -15,12 +15,19 @@ const OverviewPage = lazy(async () => ({ default: (await import('@/pages/Overvie
 const ShellPage = lazy(async () => ({ default: (await import('@/pages/ShellPage')).ShellPage }));
 const ContentPage = lazy(async () => ({ default: (await import('@/pages/ContentPage')).ContentPage }));
 const SystemPage = lazy(async () => ({ default: (await import('@/pages/SystemPage')).SystemPage }));
+const AppShellPage = lazy(async () => ({ default: (await import('@/features/app-shell/AppShell')).AppShell }));
 
 const reviewRoutes = new Set(['/', '/shell', '/system', '/content']);
 
 const LazyRoute = ({ component: Component }: { component: ComponentType }) => (
 	<Suspense fallback={null}>
 		<Component />
+	</Suspense>
+);
+
+const LazyAppShell = ({ roomId }: { roomId?: string }) => (
+	<Suspense fallback={<AppShellRouteFallback />}>
+		<AppShellPage roomId={roomId} />
 	</Suspense>
 );
 
@@ -96,7 +103,7 @@ const loginRoute = createRoute({
 const appRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: '/app',
-	component: () => <AppShell />,
+	component: () => <LazyAppShell />,
 });
 
 const appRoomRoute = createRoute({
@@ -104,7 +111,7 @@ const appRoomRoute = createRoute({
 	path: '/app/rooms/$roomId',
 	component: function AppRoomRoute() {
 		const { roomId } = appRoomRoute.useParams();
-		return <AppShell roomId={roomId} />;
+		return <LazyAppShell roomId={roomId} />;
 	},
 });
 

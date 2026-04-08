@@ -3,7 +3,6 @@ import { useNavigate } from '@tanstack/react-router';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Button, Panel, Tag } from '@/components/ui';
-import { preloadLiveMarkdownEditor } from '@/features/composer/loadLiveMarkdownEditor';
 import { betterChatApi, betterChatQueryKeys, isBetterChatApiError } from '@/lib/betterchat';
 import { spaceText } from '@/lib/text';
 import styles from './LoginPage.module.css';
@@ -31,18 +30,8 @@ export const LoginPage = () => {
 		queryFn: () => betterChatApi.publicBootstrap(),
 	});
 
-	const sessionBootstrapQuery = useQuery({
-		queryKey: betterChatQueryKeys.workspace,
-		queryFn: () => betterChatApi.workspace(),
-		retry: false,
-	});
-
 	useEffect(() => {
-		preloadLiveMarkdownEditor();
-	}, []);
-
-	useEffect(() => {
-		if (!sessionBootstrapQuery.data) {
+		if (!publicBootstrapQuery.data?.session.authenticated) {
 			return;
 		}
 
@@ -50,7 +39,7 @@ export const LoginPage = () => {
 			to: '/app',
 			replace: true,
 		});
-	}, [navigate, sessionBootstrapQuery.data]);
+	}, [navigate, publicBootstrapQuery.data?.session.authenticated]);
 
 	const loginMutation = useMutation({
 		mutationFn: () =>
@@ -61,6 +50,7 @@ export const LoginPage = () => {
 			}),
 		onSuccess: async () => {
 			await Promise.all([
+				queryClient.invalidateQueries({ queryKey: betterChatQueryKeys.publicBootstrap }),
 				queryClient.invalidateQueries({ queryKey: betterChatQueryKeys.workspace }),
 				queryClient.invalidateQueries({ queryKey: betterChatQueryKeys.roomList }),
 			]);
@@ -78,16 +68,8 @@ export const LoginPage = () => {
 			return publicBootstrapQuery.error.message;
 		}
 
-		if (
-			sessionBootstrapQuery.error &&
-			isBetterChatApiError(sessionBootstrapQuery.error) &&
-			sessionBootstrapQuery.error.code !== 'UNAUTHENTICATED'
-		) {
-			return sessionBootstrapQuery.error.message;
-		}
-
 		return null;
-	}, [loginMutation.error, publicBootstrapQuery.error, sessionBootstrapQuery.error]);
+	}, [loginMutation.error, publicBootstrapQuery.error]);
 
 	const siteName = publicBootstrapQuery.data?.server.siteName ?? 'BetterChat';
 	const serverVersion = publicBootstrapQuery.data?.server.version ?? '7.6.0';
@@ -196,16 +178,16 @@ export const LoginPage = () => {
 							/>
 						</label>
 
-					{errorMessage ? (
-						<div
-							className={styles.errorMessage}
-							data-testid='login-error'
-							role='alert'
-							aria-live='assertive'
-						>
-							{spaceText(errorMessage)}
-						</div>
-					) : null}
+						{errorMessage ? (
+							<div
+								className={styles.errorMessage}
+								data-testid='login-error'
+								role='alert'
+								aria-live='assertive'
+							>
+								{spaceText(errorMessage)}
+							</div>
+						) : null}
 
 						<div className={styles.actions}>
 							<Button disabled={!passwordEnabled || loginMutation.isPending} type='submit'>
