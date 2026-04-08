@@ -6,6 +6,10 @@
 }
 
 .shell {
+	--composer-scrollbar-width: 0.7rem;
+	--composer-scrollbar-thumb: color-mix(in srgb, var(--text-faint) 68%, transparent);
+	--composer-scrollbar-thumb-hover: color-mix(in srgb, var(--text-muted) 76%, transparent);
+	--composer-scrollbar-lane: 0.18rem;
 	border: 1px solid color-mix(in srgb, var(--border-strong) 88%, transparent);
 	border-radius: 1rem;
 	background: var(--surface-field);
@@ -252,11 +256,13 @@
 
 .textareaFallback {
 	display: block;
+	box-sizing: border-box;
 	width: 100%;
 	height: var(--composer-editor-height, 9.25rem);
 	min-height: var(--composer-editor-height, 9.25rem);
 	max-height: none;
 	padding: 0.02rem 0 0;
+	padding-inline-end: var(--composer-scrollbar-lane);
 	border: 0;
 	background: transparent;
 	color: var(--text-strong);
@@ -265,8 +271,11 @@
 	font-family: var(--font-ui);
 	font-size: 0.97rem;
 	line-height: 1.68;
+	overflow-y: auto;
 	resize: none;
+	scrollbar-gutter: stable;
 	scrollbar-width: thin;
+	scrollbar-color: var(--composer-scrollbar-thumb) transparent;
 }
 
 .textareaFallback::placeholder {
@@ -297,11 +306,39 @@
 }
 
 .editorHost :global(.cm-scroller) {
+	box-sizing: border-box;
 	height: var(--composer-editor-height, 9.25rem);
 	min-height: var(--composer-editor-height, 9.25rem);
 	max-height: none;
 	overflow-y: auto;
+	padding-inline-end: var(--composer-scrollbar-lane);
+	scrollbar-gutter: stable;
 	scrollbar-width: thin;
+	scrollbar-color: var(--composer-scrollbar-thumb) transparent;
+}
+
+.textareaFallback::-webkit-scrollbar,
+.editorHost :global(.cm-scroller::-webkit-scrollbar) {
+	width: var(--composer-scrollbar-width);
+}
+
+.textareaFallback::-webkit-scrollbar-track,
+.editorHost :global(.cm-scroller::-webkit-scrollbar-track) {
+	background: transparent;
+}
+
+.textareaFallback::-webkit-scrollbar-thumb,
+.editorHost :global(.cm-scroller::-webkit-scrollbar-thumb) {
+	border: 0.18rem solid transparent;
+	border-radius: 999px;
+	background: var(--composer-scrollbar-thumb);
+	background-clip: padding-box;
+}
+
+.textareaFallback::-webkit-scrollbar-thumb:hover,
+.editorHost :global(.cm-scroller::-webkit-scrollbar-thumb:hover) {
+	background: var(--composer-scrollbar-thumb-hover);
+	background-clip: padding-box;
 }
 
 .editorHost :global(.cm-content),

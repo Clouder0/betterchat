@@ -1,9 +1,31 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 import { loginAsFixtureUser, openRoom, readTimelineBottomGap, scrollTimelineToBottom, waitForRoomLoadingToFinish } from './test-helpers';
 
 const commandOrControl = process.platform === 'darwin' ? 'Meta' : 'Control';
 const isApiMode = (process.env.BETTERCHAT_E2E_API_MODE ?? 'fixture').toLowerCase() === 'api';
+
+const readComposerScrollMetrics = (page: Page) =>
+	page.getByTestId('composer-textarea').evaluate((node) => {
+		const scrollElement =
+			node instanceof HTMLTextAreaElement
+				? node
+				: node.closest('.cm-editor')?.querySelector('.cm-scroller');
+		if (!(scrollElement instanceof HTMLElement)) {
+			return null;
+		}
+
+		const style = window.getComputedStyle(scrollElement);
+		return {
+			clientHeight: scrollElement.clientHeight,
+			clientWidth: scrollElement.clientWidth,
+			editorKind: node.getAttribute('data-live-editor') ?? '',
+			overflowY: style.overflowY,
+			paddingInlineEnd: style.paddingInlineEnd,
+			scrollHeight: scrollElement.scrollHeight,
+			scrollbarGutter: style.scrollbarGutter,
+		};
+	});
 
 test.skip(isApiMode, 'fixture-only suite');
 
@@ -562,6 +584,55 @@ test.describe('auth and shell', () => {
 		await expect(sendButton).toHaveAttribute('data-ready', 'true');
 		const readySendBackground = await sendButton.evaluate((node) => window.getComputedStyle(node).backgroundColor);
 		expect(readySendBackground).not.toBe(idleSendBackground);
+	});
+
+	test('keeps the composer typing width stable when the input first overflows and starts scrolling', async ({ page }) => {
+		await page.setViewportSize({
+			width: 1440,
+			height: 980,
+		});
+		await loginAsFixtureUser(page);
+		await waitForRoomLoadingToFinish(page);
+
+		await expect.poll(async () => (await readComposerScrollMetrics(page))?.editorKind ?? '').toBe('true');
+
+		const textarea = page.getByTestId('composer-textarea');
+		await textarea.fill('输入区滚动条布局验证');
+
+		const beforeOverflow = await readComposerScrollMetrics(page);
+		expect(beforeOverflow).not.toBeNull();
+		if (!beforeOverflow) {
+			throw new Error('composer scroll metrics were unavailable before overflow');
+		}
+
+		expect(beforeOverflow.overflowY).toBe('auto');
+		expect(beforeOverflow.scrollHeight).toBeLessThanOrEqual(beforeOverflow.clientHeight + 1);
+		expect(beforeOverflow.scrollbarGutter).toContain('stable');
+		expect(Number.parseFloat(beforeOverflow.paddingInlineEnd)).toBeGreaterThan(0);
+
+		const overflowingText = Array.from({ length: 48 }, (_, index) => `第 ${index + 1} 行：用于触发输入区内部滚动而不让整体页面发生滚动。`).join('\n');
+		await textarea.fill(overflowingText);
+
+		await expect.poll(async () => {
+			const metrics = await readComposerScrollMetrics(page);
+			if (!metrics) {
+				return 0;
+			}
+
+			return metrics.scrollHeight - metrics.clientHeight;
+		}).toBeGreaterThan(40);
+
+		const afterOverflow = await readComposerScrollMetrics(page);
+		expect(afterOverflow).not.toBeNull();
+		if (!afterOverflow) {
+			throw new Error('composer scroll metrics were unavailable after overflow');
+		}
+
+		const pageScrollOverflow = await page.evaluate(() => Math.max(document.documentElement.scrollHeight - window.innerHeight, 0));
+		expect(Math.abs(afterOverflow.clientWidth - beforeOverflow.clientWidth)).toBeLessThanOrEqual(1);
+		expect(afterOverflow.scrollbarGutter).toContain('stable');
+		expect(Number.parseFloat(afterOverflow.paddingInlineEnd)).toBeGreaterThan(0);
+		expect(pageScrollOverflow).toBeLessThan(2);
 	});
 
 	test('replaces the sendbox with a compact readonly notice in fixture readonly rooms', async ({ page }) => {
