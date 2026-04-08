@@ -268,6 +268,7 @@ describe('MarkdownContent - Structural Rendering', () => {
 
 			const code = getByTag(pre!, 'code');
 			expect(code).not.toBe(null);
+			expect(code!.className).toContain('hljs');
 			expect(code!.textContent).toContain('const x = 1;');
 		});
 
@@ -278,6 +279,9 @@ describe('MarkdownContent - Structural Rendering', () => {
 
 			const figure = getByTag(container, 'figure');
 			expect(figure).not.toBe(null);
+			const code = getByTag(container, 'code');
+			expect(code).not.toBe(null);
+			expect(code!.className).toContain('hljs');
 		});
 
 		it('renders code block with copy button', async () => {
@@ -433,18 +437,15 @@ describe('MarkdownContent - Structural Rendering', () => {
 	});
 
 	describe('Mention Decoration', () => {
-		it('BUG: decorates mentions inside inline code due to custom component type check', async () => {
-			// decorateInlineMentions checks `typeof node.type === 'string'` to skip code elements,
-			// but react-markdown's custom CodeBlock component has a function type, so the check
-			// fails to skip it and @username inside backticks gets decorated as a mention.
+		it('does NOT decorate mentions inside inline code rendered through the custom code component', async () => {
 			const container = renderMarkdown("Use `@username` syntax");
 			await settle();
 
 			const code = getByTag(container, 'code');
 			expect(code).not.toBe(null);
-			// This SHOULD be null (no mention inside code), but IS a mention due to the bug
 			const mentionInCode = findByDataAttr(code!, 'data-mention-token');
-			expect(mentionInCode).not.toBe(null); // Bug: mentions leak into inline code
+			expect(mentionInCode).toBe(null);
+			expect(code!.textContent).toBe('@username');
 		});
 
 		it('does NOT decorate mentions inside fenced code blocks', async () => {

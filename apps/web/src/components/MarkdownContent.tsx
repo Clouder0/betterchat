@@ -3,8 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
-import rehypeHighlight from 'rehype-highlight';
-import type { FocusEventHandler, KeyboardEventHandler, ReactNode } from 'react';
+import type { FocusEventHandler, KeyboardEventHandler, ReactElement, ReactNode } from 'react';
 import type { Components } from 'react-markdown';
 import { pangu } from 'pangu/browser';
 import 'katex/dist/katex.min.css';
@@ -13,6 +12,7 @@ import { GalleryImage } from '@/features/media/ImageGallery';
 import { useClipboard } from '@/hooks/useClipboard';
 import type { MentionInteractionUser } from '@/lib/mentions';
 import { resolveInlineMentionTone, resolveMentionInteractionUser, splitMentionSegments } from '@/lib/mentions';
+import { rehypeBetterChatHighlight } from './rehypeBetterChatHighlight';
 import styles from './MarkdownContent.module.css';
 
 type MarkdownCodeNode = {
@@ -53,6 +53,24 @@ export type MarkdownMentionInteraction = {
 };
 
 const NON_INTERACTIVE_MENTION_PARENT_TYPES = new Set(['a', 'button', 'code', 'pre', 'kbd', 'samp']);
+const MENTION_DECORATION_BOUNDARY_PARENT_TYPES = new Set(['code', 'pre', 'kbd', 'samp']);
+const MENTION_DECORATION_BOUNDARY = Symbol('mention-decoration-boundary');
+
+type MentionDecorationBoundaryType = {
+	[MENTION_DECORATION_BOUNDARY]?: true;
+};
+
+const isMentionDecorationBoundaryElement = (node: ReactElement) => {
+	if (typeof node.type === 'string') {
+		return MENTION_DECORATION_BOUNDARY_PARENT_TYPES.has(node.type);
+	}
+
+	if (typeof node.type !== 'function' && typeof node.type !== 'object') {
+		return false;
+	}
+
+	return Boolean((node.type as MentionDecorationBoundaryType)[MENTION_DECORATION_BOUNDARY]);
+};
 
 const buildMentionInteractionUserSignature = (users: MentionInteractionUser[] | undefined) =>
 	(users ?? [])
@@ -167,7 +185,7 @@ const decorateInlineMentions = ({
 
 	const nextInteractiveDisabled =
 		interactiveDisabled || (typeof node.type === 'string' && NON_INTERACTIVE_MENTION_PARENT_TYPES.has(node.type));
-	if (nextInteractiveDisabled && typeof node.type === 'string' && ['code', 'pre', 'kbd', 'samp'].includes(node.type)) {
+	if (isMentionDecorationBoundaryElement(node)) {
 		return node;
 	}
 
@@ -430,6 +448,7 @@ const CodeBlock: NonNullable<Components['code']> = ({
 		</figure>
 	);
 };
+(CodeBlock as MentionDecorationBoundaryType)[MENTION_DECORATION_BOUNDARY] = true;
 
 const createMarkdownComponents = ({
 	currentUser,
@@ -446,7 +465,7 @@ const createMarkdownComponents = ({
 	mentionInteraction?: MarkdownMentionInteraction;
 }): Components => ({
 	a: ({ children, ...props }) => (
-		<a className={styles.link} {...props}>
+		<a className={styles.markdownLink} {...props}>
 			{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}
 		</a>
 	),
@@ -525,7 +544,7 @@ const MarkdownContentComponent = ({
 		<div className={`${styles.markdown} ${dense ? styles.dense : ''}`.trim()}>
 			<ReactMarkdown
 				components={markdownComponents}
-				rehypePlugins={[rehypeKatex, [rehypeHighlight, { detect: true }]]}
+				rehypePlugins={[rehypeKatex, rehypeBetterChatHighlight]}
 				remarkPlugins={[remarkGfm, remarkMath, remarkPanguSpacing]}
 			>
 				{normalizedSource}

@@ -103,7 +103,7 @@
 	border-top: 1px solid var(--border-soft);
 }
 
-.link {
+.markdownLink {
 	position: relative;
 	color: color-mix(in srgb, var(--accent) 82%, var(--text-strong));
 	text-decoration: underline;
@@ -120,14 +120,14 @@
 		background-size 180ms ease;
 }
 
-.link:hover,
-.link:focus-visible {
+.markdownLink:hover,
+.markdownLink:focus-visible {
 	color: color-mix(in srgb, var(--accent-strong) 84%, var(--text-strong));
 	text-decoration-color: transparent;
 	background-size: 100% 1px;
 }
 
-.link:focus-visible {
+.markdownLink:focus-visible {
 	outline: none;
 }
 

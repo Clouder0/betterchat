@@ -7,5 +7,8 @@
   },
   "scripts": {
     "typecheck": "bunx tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "6.0.2"
   }
 }
