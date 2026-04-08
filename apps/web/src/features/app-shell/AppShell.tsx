@@ -94,26 +94,10 @@ import {
 	resolveComposerEditorResizeHeight,
 	saveComposerEditorHeightPreference,
 } from './composerHeightPreference';
-import {
-	DEFAULT_SIDEBAR_WIDTH_PX,
-	SIDEBAR_RESIZE_DESKTOP_BREAKPOINT_PX,
-	clampSidebarPreviewWidth,
-	clampSidebarWidth,
-	formatSidebarWidthCssValue,
-	loadSidebarWidthPreference,
-	resolveSidebarPreviewWidth,
-	resolveSidebarWidthBounds,
-	saveSidebarWidthPreference,
-} from './sidebarWidthPreference';
 import { resolveSidebarSearchKeyAction } from './sidebarSearchKeyAction';
 import { shouldIgnorePointerRegionMove, shouldRefreshTimelinePointerEpoch } from './pointerRegionOwnership';
 import { canApplyPendingComposerFocus } from './postNavigationFocus';
 import { resolveSidebarScrollBehavior } from './sidebarRoomScroll';
-import {
-	resolveSidebarRailPointerCompletion,
-	resolveSidebarRailPointerPreview,
-	SIDEBAR_RAIL_DRAG_SLOP_PX,
-} from './sidebarRailInteraction';
 import {
 	hasOlderHistory,
 	mergeOlderHistoryPage,
@@ -122,11 +106,7 @@ import {
 	type OlderHistoryState,
 } from './olderHistoryState';
 import { resolveShellKeyboardAction } from './shellKeyboardRouter';
-import {
-	loadSidebarCollapsedPreference,
-	saveSidebarCollapsedPreference,
-	SIDEBAR_COLLAPSE_SNAP_THRESHOLD_PX,
-} from './sidebarCollapsePreference';
+import { useSidebarInteractionController } from './useSidebarInteractionController';
 
 const roomKindLabel: Record<'channel' | 'group' | 'dm', string> = {
 	channel: '频道',
@@ -158,7 +138,6 @@ const setRoomVisible = <TRoom extends Pick<RoomSummary, 'visibility'> & object>(
 		...room,
 		visibility: 'visible',
 	}) as TRoom;
-const readInteractionNow = () => Date.now();
 const resolveRoomHeaderPresenceText = ({
 	handle,
 	presence,
@@ -523,14 +502,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const initialFocusBootstrappedRef = useRef(false);
 	const realtimeControllerRef = useRef<ReturnType<typeof createBetterChatRealtimeController> | null>(null);
 	const activeRoomIdRef = useRef<string | undefined>(roomId);
-	const sidebarResizeStateRef = useRef<{
-		currentWidth: number;
-		dragged: boolean;
-		pointerId: number;
-		startedCollapsed: boolean;
-		startWidth: number;
-		startX: number;
-	} | null>(null);
 	const composerResizeStateRef = useRef<{
 		currentHeight: number;
 		pointerId: number;
@@ -543,11 +514,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const interactionEpochRef = useRef(0);
 	const lastSidebarFocusEpochRef = useRef(0);
 	const lastTimelinePointerEpochRef = useRef(0);
-	const sidebarLiveWidthRef = useRef(loadSidebarWidthPreference());
-	const sidebarCollapsedInitialRef = useRef(true);
-	const lastSidebarExpandFromCollapsedPointerAtRef = useRef<number>(-1);
-	const sidebarResizeFrameRef = useRef<number | null>(null);
-	const sidebarResizePendingWidthRef = useRef<number | null>(null);
 	const composerLiveHeightRef = useRef(loadComposerEditorHeightPreference());
 	const composerResizeFrameRef = useRef<number | null>(null);
 	const composerResizePendingHeightRef = useRef<number | null>(null);
@@ -559,15 +525,10 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const [favoriteOverrides, setFavoriteOverrides] = useState(loadFavoriteOverrides);
 	const [roomAlertPreferences, setRoomAlertPreferences] = useState(loadRoomAlertPreferences);
 	const [motionPreference, setMotionPreference] = useState<MotionPreference>(getStoredMotionPreference);
-	const [sidebarWidth, setSidebarWidth] = useState(loadSidebarWidthPreference);
-	const [sidebarCollapsed, setSidebarCollapsed] = useState(loadSidebarCollapsedPreference);
-	const [sidebarPreviewCollapsedOverride, setSidebarPreviewCollapsedOverride] = useState<boolean | null>(null);
 	const [composerEditorHeight, setComposerEditorHeight] = useState(loadComposerEditorHeightPreference);
 	const [conversationBodyHeight, setConversationBodyHeight] = useState(0);
 	const [viewportWidth, setViewportWidth] = useState(() => (typeof window === 'undefined' ? 1440 : window.innerWidth));
-	const [sidebarResizeDragging, setSidebarResizeDragging] = useState(false);
 	const [composerResizeDragging, setComposerResizeDragging] = useState(false);
-	const [sidebarResizeKeyboardAdjusting, setSidebarResizeKeyboardAdjusting] = useState(false);
 	const [composerResizeKeyboardAdjusting, setComposerResizeKeyboardAdjusting] = useState(false);
 	const [roomLocalMessages, setRoomLocalMessages] = useState<Record<string, LocalRoomMessage[]>>({});
 	const [roomOlderHistory, setRoomOlderHistory] = useState<Record<string, OlderHistoryState>>({});
@@ -641,18 +602,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	}, []);
 	const favoriteOverridesEnabled = betterChatApi.mode === 'fixture';
 	const apiModePollingEnabled = betterChatApi.mode === 'api';
-	const sidebarResizeEnabled = viewportWidth > SIDEBAR_RESIZE_DESKTOP_BREAKPOINT_PX;
-	const sidebarWidthBounds = useMemo(
-		() =>
-			resolveSidebarWidthBounds({
-				infoSidebarOpen: roomInfoOpen,
-				viewportWidth,
-			}),
-		[roomInfoOpen, viewportWidth],
-	);
-	const resolvedSidebarWidth = sidebarResizeEnabled
-		? clampSidebarWidth(sidebarWidth, sidebarWidthBounds)
-		: DEFAULT_SIDEBAR_WIDTH_PX;
 	const composerHeightBounds = useMemo(
 		() =>
 			resolveComposerEditorHeightBounds({
@@ -664,22 +613,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const activeRoomKey = roomId ?? null;
 	const composerReady = activeRoomKey !== null && composerReadyRoomId === activeRoomKey;
 	const composerFocused = activeRoomKey !== null && composerFocusedRoomId === activeRoomKey;
-	const effectiveSidebarCollapsed = sidebarPreviewCollapsedOverride ?? sidebarCollapsed;
-	const settledSidebarWidth = sidebarCollapsed ? 0 : resolvedSidebarWidth;
-	const visibleSidebarWidth = sidebarResizeDragging
-		? sidebarLiveWidthRef.current
-		: effectiveSidebarCollapsed
-			? 0
-			: resolvedSidebarWidth;
-	const workspaceStyle = useMemo(
-		() =>
-			({
-				'--shell-sidebar-width': formatSidebarWidthCssValue(
-					sidebarResizeDragging ? sidebarLiveWidthRef.current : settledSidebarWidth,
-				),
-			}) as CSSProperties,
-		[settledSidebarWidth, sidebarResizeDragging],
-	);
 	const composerSectionStyle = useMemo(
 		() =>
 			({
@@ -780,37 +713,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		return () => window.removeEventListener('resize', syncViewportWidth);
 	}, []);
 
-	const applySidebarWidthToWorkspace = useCallback((nextWidth: number) => {
-		sidebarLiveWidthRef.current = nextWidth;
-		workspaceRef.current?.style.setProperty('--shell-sidebar-width', formatSidebarWidthCssValue(nextWidth));
-	}, []);
-
-	const flushSidebarWidthPreview = useCallback(() => {
-		if (typeof window !== 'undefined' && sidebarResizeFrameRef.current !== null) {
-			window.cancelAnimationFrame(sidebarResizeFrameRef.current);
-			sidebarResizeFrameRef.current = null;
-		}
-
-		const pendingWidth = sidebarResizePendingWidthRef.current;
-		if (pendingWidth !== null) {
-			applySidebarWidthToWorkspace(pendingWidth);
-			sidebarResizePendingWidthRef.current = null;
-		}
-	}, [applySidebarWidthToWorkspace]);
-
-	const discardSidebarWidthPreview = useCallback(() => {
-		if (typeof window !== 'undefined' && sidebarResizeFrameRef.current !== null) {
-			window.cancelAnimationFrame(sidebarResizeFrameRef.current);
-			sidebarResizeFrameRef.current = null;
-		}
-
-		sidebarResizePendingWidthRef.current = null;
-	}, []);
-
-	const setSidebarPreviewCollapsedState = useCallback((next: boolean | null) => {
-		setSidebarPreviewCollapsedOverride((current) => (current === next ? current : next));
-	}, []);
-
 	const applyComposerEditorHeightToSection = useCallback((nextHeight: number) => {
 		composerLiveHeightRef.current = nextHeight;
 		composerSectionRef.current?.style.setProperty('--composer-editor-height', formatComposerEditorHeightCssValue(nextHeight));
@@ -846,38 +748,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		composerResizeGlobalListenersRef.current = null;
 	}, []);
 
-	const previewSidebarWidth = useCallback(
-		(nextWidth: number) => {
-			const clampedWidth = clampSidebarPreviewWidth(nextWidth, sidebarWidthBounds.max);
-			sidebarLiveWidthRef.current = clampedWidth;
-			sidebarResizePendingWidthRef.current = clampedWidth;
-
-			if (typeof window === 'undefined') {
-				applySidebarWidthToWorkspace(clampedWidth);
-				sidebarResizePendingWidthRef.current = null;
-				return clampedWidth;
-			}
-
-			if (sidebarResizeFrameRef.current !== null) {
-				return clampedWidth;
-			}
-
-			sidebarResizeFrameRef.current = window.requestAnimationFrame(() => {
-				sidebarResizeFrameRef.current = null;
-				const pendingWidth = sidebarResizePendingWidthRef.current;
-				if (pendingWidth === null) {
-					return;
-				}
-
-				applySidebarWidthToWorkspace(pendingWidth);
-				sidebarResizePendingWidthRef.current = null;
-			});
-
-			return clampedWidth;
-		},
-		[applySidebarWidthToWorkspace, sidebarWidthBounds.max],
-	);
-
 	const previewComposerHeight = useCallback(
 		(nextHeight: number) => {
 			const clampedHeight = clampComposerEditorHeight(nextHeight, composerHeightBounds);
@@ -910,14 +780,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		[applyComposerEditorHeightToSection, composerHeightBounds],
 	);
 
-	useEffect(() => {
-		if (sidebarResizeDragging) {
-			return;
-		}
-
-		applySidebarWidthToWorkspace(settledSidebarWidth);
-	}, [applySidebarWidthToWorkspace, settledSidebarWidth, sidebarResizeDragging]);
-
 	useLayoutEffect(() => {
 		if (composerResizeDragging) {
 			return;
@@ -928,10 +790,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 
 	useEffect(
 		() => () => {
-			if (typeof window !== 'undefined' && sidebarResizeFrameRef.current !== null) {
-				window.cancelAnimationFrame(sidebarResizeFrameRef.current);
-			}
-
 			if (typeof window !== 'undefined' && composerResizeFrameRef.current !== null) {
 				window.cancelAnimationFrame(composerResizeFrameRef.current);
 			}
@@ -940,22 +798,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		},
 		[],
 	);
-
-	useEffect(() => {
-		if (!sidebarResizeDragging || typeof document === 'undefined') {
-			return;
-		}
-
-		const previousCursor = document.body.style.cursor;
-		const previousUserSelect = document.body.style.userSelect;
-		document.body.style.cursor = 'col-resize';
-		document.body.style.userSelect = 'none';
-
-		return () => {
-			document.body.style.cursor = previousCursor;
-			document.body.style.userSelect = previousUserSelect;
-		};
-	}, [sidebarResizeDragging]);
 
 	useEffect(() => {
 		if (!composerResizeDragging || typeof document === 'undefined') {
@@ -1341,6 +1183,33 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		return focusSidebarSearch();
 	}, [focusSidebarRoom, focusSidebarSearch, focusedSidebarRoomId, roomId, visibleSidebarRoomIds]);
 
+	const {
+		clearSidebarResizeKeyboardAdjusting,
+		effectiveSidebarCollapsed,
+		expandSidebar,
+		handleSidebarResizeDoubleClick,
+		handleSidebarResizeKeyDown,
+		handleSidebarResizePointerDown,
+		handleSidebarResizePointerMove,
+		sidebarCollapsed,
+		sidebarResizeDragging,
+		sidebarResizeEnabled,
+		sidebarResizeKeyboardAdjusting,
+		sidebarWidthBounds,
+		stopSidebarResize,
+		toggleSidebarCollapse,
+		visibleSidebarWidth,
+		workspaceStyle,
+	} = useSidebarInteractionController({
+		focusSidebarFromResizeHandle,
+		focusTimeline,
+		markSidebarPointerInteraction,
+		roomInfoOpen,
+		sidebarRef,
+		viewportWidth,
+		workspaceRef,
+	});
+
 	useEffect(() => {
 		const handlePointerRegion = (event: PointerEvent) => {
 			if (event.pointerType !== 'mouse' && event.pointerType !== 'pen') {
@@ -1433,65 +1302,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		return () => window.removeEventListener('keydown', handlePointerTimelineKeyboardEntry, true);
 	}, [focusTimeline]);
 
-	const commitSidebarWidth = useCallback(
-		(nextWidth: number) => {
-			const clampedWidth = clampSidebarWidth(nextWidth, sidebarWidthBounds);
-			flushSidebarWidthPreview();
-			applySidebarWidthToWorkspace(clampedWidth);
-			setSidebarWidth((currentWidth) => (currentWidth === clampedWidth ? currentWidth : clampedWidth));
-			saveSidebarWidthPreference(clampedWidth);
-			return clampedWidth;
-		},
-		[applySidebarWidthToWorkspace, flushSidebarWidthPreview, sidebarWidthBounds],
-	);
-
-	const toggleSidebarCollapse = useCallback(() => {
-		setSidebarCollapsed((current) => {
-			const next = !current;
-			saveSidebarCollapsedPreference(next);
-			return next;
-		});
-	}, []);
-
-	const stopSidebarResize = useCallback((pointerId?: number) => {
-		const resizeState = sidebarResizeStateRef.current;
-		if (pointerId !== undefined && resizeState?.pointerId !== pointerId) {
-			return;
-		}
-
-		if (resizeState) {
-			const completion = resolveSidebarRailPointerCompletion({
-				collapsedAtStart: resizeState.startedCollapsed,
-				collapseThreshold: SIDEBAR_COLLAPSE_SNAP_THRESHOLD_PX,
-				dragged: resizeState.dragged,
-				rawWidth: resizeState.currentWidth,
-				restoredWidth: resolvedSidebarWidth,
-			});
-
-			if (completion.kind === 'set-collapsed') {
-				discardSidebarWidthPreview();
-				applySidebarWidthToWorkspace(0);
-				setSidebarCollapsed(true);
-				saveSidebarCollapsedPreference(true);
-			} else if (completion.kind === 'commit-resize') {
-				if (sidebarCollapsed) {
-					setSidebarCollapsed(false);
-					saveSidebarCollapsedPreference(false);
-				}
-				commitSidebarWidth(completion.width);
-			} else if (completion.kind === 'expand-restored-width') {
-				discardSidebarWidthPreview();
-				setSidebarCollapsed(false);
-				saveSidebarCollapsedPreference(false);
-				lastSidebarExpandFromCollapsedPointerAtRef.current = readInteractionNow();
-			}
-		}
-
-		sidebarResizeStateRef.current = null;
-		setSidebarPreviewCollapsedState(null);
-		setSidebarResizeDragging(false);
-	}, [applySidebarWidthToWorkspace, commitSidebarWidth, discardSidebarWidthPreview, resolvedSidebarWidth, setSidebarPreviewCollapsedState, sidebarCollapsed]);
-
 	const commitComposerHeight = useCallback(
 		(nextHeight: number) => {
 			const clampedHeight = clampComposerEditorHeight(nextHeight, composerHeightBounds);
@@ -1521,142 +1331,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			setComposerResizeDragging(false);
 		},
 		[clearComposerResizeGlobalListeners, commitComposerHeight],
-	);
-
-	const handleSidebarResizePointerDown = useCallback(
-		(event: ReactPointerEvent<HTMLDivElement>) => {
-			if (!sidebarResizeEnabled || event.button !== 0) {
-				return;
-			}
-
-			event.preventDefault();
-			markSidebarPointerInteraction();
-			setSidebarResizeKeyboardAdjusting(false);
-			setSidebarPreviewCollapsedState(null);
-			const currentWidth = sidebarCollapsed ? 0 : (sidebarRef.current?.getBoundingClientRect().width ?? resolvedSidebarWidth);
-			sidebarResizeStateRef.current = {
-				currentWidth,
-				dragged: false,
-				pointerId: event.pointerId,
-				startedCollapsed: sidebarCollapsed,
-				startWidth: currentWidth,
-				startX: event.clientX,
-			};
-			event.currentTarget.setPointerCapture(event.pointerId);
-		},
-		[markSidebarPointerInteraction, resolvedSidebarWidth, setSidebarPreviewCollapsedState, sidebarCollapsed, sidebarResizeEnabled],
-	);
-
-	const handleSidebarResizePointerMove = useCallback(
-		(event: ReactPointerEvent<HTMLDivElement>) => {
-			const resizeState = sidebarResizeStateRef.current;
-			if (!resizeState || resizeState.pointerId !== event.pointerId) {
-				return;
-			}
-
-			const dragDistance = Math.abs(event.clientX - resizeState.startX);
-			if (!resizeState.dragged && dragDistance < SIDEBAR_RAIL_DRAG_SLOP_PX) {
-				return;
-			}
-
-			event.preventDefault();
-			if (!resizeState.dragged) {
-				resizeState.dragged = true;
-				setSidebarResizeDragging(true);
-			}
-			const rawWidth = resizeState.startWidth + (event.clientX - resizeState.startX);
-			const previewWidth = resolveSidebarPreviewWidth({
-				currentX: event.clientX,
-				max: sidebarWidthBounds.max,
-				startWidth: resizeState.startWidth,
-				startX: resizeState.startX,
-			});
-			const preview = resolveSidebarRailPointerPreview({
-				collapseThreshold: SIDEBAR_COLLAPSE_SNAP_THRESHOLD_PX,
-				previewWidth,
-				rawWidth,
-			});
-			setSidebarPreviewCollapsedState(preview.collapsed);
-			resizeState.currentWidth = previewSidebarWidth(preview.width);
-		},
-		[previewSidebarWidth, setSidebarPreviewCollapsedState, sidebarWidthBounds.max],
-	);
-
-	const handleSidebarResizeDoubleClick = useCallback(() => {
-		if (readInteractionNow() - lastSidebarExpandFromCollapsedPointerAtRef.current < 320) {
-			return;
-		}
-
-		toggleSidebarCollapse();
-	}, [toggleSidebarCollapse]);
-
-	const handleSidebarResizeKeyDown = useCallback(
-		(event: ReactKeyboardEvent<HTMLDivElement>) => {
-			if (!sidebarResizeEnabled) {
-				return;
-			}
-
-			if (event.key === 'Enter') {
-				event.preventDefault();
-				setSidebarResizeKeyboardAdjusting((currentState) => !currentState);
-				return;
-			}
-
-			if (event.key === 'Escape' && sidebarResizeKeyboardAdjusting) {
-				event.preventDefault();
-				setSidebarResizeKeyboardAdjusting(false);
-				return;
-			}
-
-			if (!sidebarResizeKeyboardAdjusting) {
-				if (event.key === 'ArrowLeft') {
-					event.preventDefault();
-					void focusSidebarFromResizeHandle();
-					return;
-				}
-
-				if (event.key === 'ArrowRight') {
-					event.preventDefault();
-					void focusTimeline();
-				}
-
-				return;
-			}
-
-			const step = event.shiftKey ? 40 : 16;
-			if (event.key === 'ArrowLeft') {
-				event.preventDefault();
-				commitSidebarWidth(resolvedSidebarWidth - step);
-				return;
-			}
-
-			if (event.key === 'ArrowRight') {
-				event.preventDefault();
-				commitSidebarWidth(resolvedSidebarWidth + step);
-				return;
-			}
-
-			if (event.key === 'Home') {
-				event.preventDefault();
-				commitSidebarWidth(sidebarWidthBounds.min);
-				return;
-			}
-
-			if (event.key === 'End') {
-				event.preventDefault();
-				commitSidebarWidth(sidebarWidthBounds.max);
-			}
-		},
-		[
-			commitSidebarWidth,
-			focusSidebarFromResizeHandle,
-			focusTimeline,
-			resolvedSidebarWidth,
-			sidebarResizeEnabled,
-			sidebarResizeKeyboardAdjusting,
-			sidebarWidthBounds.max,
-			sidebarWidthBounds.min,
-		],
 	);
 
 	const handleComposerResizePointerDown = useCallback(
@@ -1791,14 +1465,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			resolvedComposerEditorHeight,
 		],
 	);
-
-	useEffect(() => {
-		if (sidebarResizeEnabled) {
-			return;
-		}
-
-		setSidebarResizeKeyboardAdjusting(false);
-	}, [sidebarResizeEnabled]);
 
 	const clearForwardToast = useCallback(() => {
 		if (forwardToastTimerRef.current) {
@@ -2801,8 +2467,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 
 			if (action.kind === 'focus-search') {
 				if (sidebarCollapsed) {
-					setSidebarCollapsed(false);
-					saveSidebarCollapsedPreference(false);
+					expandSidebar();
 					setTimeout(() => focusSidebarSearch({ select: true }), 0);
 				} else {
 					void focusSidebarSearch({ select: true });
@@ -2818,8 +2483,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 
 			if (action.kind === 'focus-sidebar') {
 				if (sidebarCollapsed) {
-					setSidebarCollapsed(false);
-					saveSidebarCollapsedPreference(false);
+					expandSidebar();
 					setTimeout(() => {
 						if (!focusSidebarRoom(focusedSidebarRoomId ?? roomId ?? visibleSidebarRoomIds[0] ?? null)) {
 							focusSidebarSearch();
@@ -2849,36 +2513,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 
 		window.addEventListener('keydown', handleKeydown);
 		return () => window.removeEventListener('keydown', handleKeydown);
-	}, [focusComposer, focusSidebarRoom, focusSidebarSearch, focusTimeline, focusedSidebarRoomId, roomId, roomTimelineQuery.data, sidebarCollapsed, sidebarResizeEnabled, toggleSidebarCollapse, updateKeyboardFocusRegion, visibleSidebarRoomIds]);
-
-	useEffect(() => {
-		if (!sidebarCollapsed) {
-			return;
-		}
-
-		const region = resolveElementKeyboardRegion(document.activeElement as Element | null);
-		if (region === 'sidebar-list') {
-			focusTimeline('preferred');
-		}
-	}, [sidebarCollapsed, focusTimeline]);
-
-	useEffect(() => {
-		if (sidebarCollapsedInitialRef.current) {
-			sidebarCollapsedInitialRef.current = false;
-			return;
-		}
-
-		const workspace = workspaceRef.current;
-		if (!workspace || sidebarResizeDragging || isDocumentMotionDisabled()) {
-			return;
-		}
-
-		workspace.setAttribute('data-sidebar-transitioning', 'true');
-		const fallbackTimer = window.setTimeout(() => {
-			workspace.removeAttribute('data-sidebar-transitioning');
-		}, 250);
-		return () => window.clearTimeout(fallbackTimer);
-	}, [sidebarCollapsed, sidebarResizeDragging]);
+	}, [expandSidebar, focusComposer, focusSidebarRoom, focusSidebarSearch, focusTimeline, focusedSidebarRoomId, roomId, roomTimelineQuery.data, sidebarCollapsed, sidebarResizeEnabled, toggleSidebarCollapse, updateKeyboardFocusRegion, visibleSidebarRoomIds]);
 
 	useEffect(() => {
 		if (initialFocusBootstrappedRef.current || shellLoading || hasOpenBlockingDialog()) {
@@ -4017,7 +3652,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 					data-keyboard-adjusting={sidebarResizeKeyboardAdjusting ? 'true' : 'false'}
 					data-sidebar-collapsed={effectiveSidebarCollapsed ? 'true' : 'false'}
 					data-testid='sidebar-resize-handle'
-					onBlur={() => setSidebarResizeKeyboardAdjusting(false)}
+					onBlur={clearSidebarResizeKeyboardAdjusting}
 					onDoubleClick={handleSidebarResizeDoubleClick}
 					onFocus={() => updateKeyboardFocusRegion(null)}
 					onKeyDown={handleSidebarResizeKeyDown}
