@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 
 import {
+	clampViewportSnapshotAnchorOffset,
 	mergePendingContentResizeAdjustment,
 	normalizePendingContentResizeAdjustment,
 	resolveHistoryPrependRestoreScrollTop,
+	resolveViewportSnapshotScrollTop,
 	type ActiveHistoryPrependRestore,
 	type PendingContentResizeAdjustment,
 } from './timelineViewportRestoration';
@@ -42,6 +44,42 @@ const contentResizeAnchorAdjustment: PendingContentResizeAdjustment<Snapshot> = 
 };
 
 describe('timelineViewportRestoration', () => {
+	it('clamps anchor offsets to the resized message height during viewport restoration', () => {
+		expect(
+			clampViewportSnapshotAnchorOffset({
+				anchorHeight: 269,
+				anchorOffset: 332,
+			}),
+		).toBe(268);
+
+		expect(
+			clampViewportSnapshotAnchorOffset({
+				anchorHeight: 269,
+				anchorOffset: 192,
+			}),
+		).toBe(192);
+	});
+
+	it('derives the restored scrollTop from the clamped anchor offset', () => {
+		expect(
+			resolveViewportSnapshotScrollTop({
+				anchorHeight: 269,
+				anchorOffset: 332,
+				anchorTop: 874,
+				viewportAnchorTopBias: 12,
+			}),
+		).toBe(1130);
+
+		expect(
+			resolveViewportSnapshotScrollTop({
+				anchorHeight: 269,
+				anchorOffset: 24,
+				anchorTop: -10,
+				viewportAnchorTopBias: 12,
+			}),
+		).toBe(2);
+	});
+
 	it('locks anchor adjustments to the original prepend snapshot while history prepend restoration is active', () => {
 		expect(
 			normalizePendingContentResizeAdjustment({

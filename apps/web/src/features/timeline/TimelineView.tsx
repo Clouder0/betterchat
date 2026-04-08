@@ -39,9 +39,11 @@ import {
 } from './messageCollapsing';
 import { resolveTimelineMessageLayout } from './timelineMessageLayout';
 import {
+	clampViewportSnapshotAnchorOffset,
 	mergePendingContentResizeAdjustment,
 	normalizePendingContentResizeAdjustment,
 	resolveHistoryPrependRestoreScrollTop,
+	resolveViewportSnapshotScrollTop,
 	type ActiveHistoryPrependRestore,
 	type PendingContentResizeAdjustment,
 } from './timelineViewportRestoration';
@@ -72,6 +74,7 @@ import {
 	shouldSuppressPinnedLiveUnreadDivider,
 	type TimelineUnreadDividerSnapshot,
 } from './unreadDividerState';
+import { useTimelineReplyJumpController, type ReplyJumpNavigationState } from './useTimelineReplyJumpController';
 import styles from './TimelineView.module.css';
 
 const AUTO_SCROLL_BOTTOM_THRESHOLD = 72;
@@ -94,19 +97,12 @@ const KEYBOARD_FOCUS_REVEAL_PADDING_TOP = 14;
 const KEYBOARD_FOCUS_REVEAL_PADDING_BOTTOM = 26;
 const REPLY_RETURN_SOURCE_VISIBILITY_PADDING_PX = 48;
 const REPLY_RETURN_SNAPSHOT_TOLERANCE_PX = 56;
-const REPLY_JUMP_LATEST_REVEAL_DELAY_MS = 280;
-const REPLY_RETURN_AUTO_DISMISS_MS = 4200;
 
 type TimelineToastTone = 'success' | 'warning';
 type PendingViewportSyncMode = 'minimal' | 'full';
 
 type UnsavedRoomViewportSnapshot = Omit<RoomViewportSnapshot, 'updatedAt'>;
 type ViewportAnchorSnapshot = UnsavedRoomViewportSnapshot | RoomViewportSnapshot;
-type ReplyJumpNavigationState = {
-	awaitingDeparture: boolean;
-	snapshot: UnsavedRoomViewportSnapshot;
-	sourceMessageId: string;
-};
 type MessageContextMenuState = {
 	activeActionKey: string | null;
 	anchorX: number;
@@ -674,7 +670,6 @@ export const TimelineView = ({
 	const [authorQuickPanelPosition, setAuthorQuickPanelPosition] = useState<{ left: number; top: number } | null>(null);
 	const [messageContextMenuPosition, setMessageContextMenuPosition] = useState<{ left: number; top: number } | null>(null);
 	const [timelineToast, setTimelineToast] = useState<{ id: number; message: string; tone: TimelineToastTone } | null>(null);
-	const [replyJumpNavigation, setReplyJumpNavigation] = useState<ReplyJumpNavigationState | null>(null);
 	const messageStreamRef = useRef<HTMLDivElement>(null);
 	const unreadDividerRef = useRef<HTMLDivElement>(null);
 	const authorQuickPanelRef = useRef<HTMLDivElement>(null);
@@ -692,8 +687,6 @@ export const TimelineView = ({
 	const viewportPersistTimerRef = useRef<number | null>(null);
 	const sequentialBottomJumpTimerRef = useRef<number | null>(null);
 	const unreadDividerSettleTimerRef = useRef<number | null>(null);
-	const replyJumpLatestRevealTimerRef = useRef<number | null>(null);
-	const replyJumpReturnDismissTimerRef = useRef<number | null>(null);
 	const contentResizeAdjustmentFrameRef = useRef<number | null>(null);
 	const historyPrependRestoreSettleFrameRef = useRef<number | null>(null);
 	const scrollAnimationFrameRef = useRef<number | null>(null);
@@ -725,7 +718,10 @@ export const TimelineView = ({
 	const appendedMessageExpansionDefaultsRef = useRef<Record<string, boolean>>({});
 	const loadedExpansionRoomIdRef = useRef(timeline.roomId);
 	const expandedMessagesRef = useRef(expandedMessages);
-	const expansionToggleSnapshotRef = useRef<UnsavedRoomViewportSnapshot | null>(null);
+	const pendingExpansionToggleRestoreRef = useRef<{
+		roomId: string;
+		snapshot: ViewportAnchorSnapshot | null;
+	} | null>(null);
 	const lastReadRequestAnchorRef = useRef<string | null>(null);
 	const pendingUnreadDividerSettleAnchorRef = useRef<string | null>(null);
 	const lastLiveUnreadDividerRef = useRef<TimelineUnreadDividerSnapshot | null>(null);
@@ -741,11 +737,7 @@ export const TimelineView = ({
 	} | null>(null);
 	const pendingSequentialBottomJumpRef = useRef(false);
 	const [preferBottomAfterUnreadClick, setPreferBottomAfterUnreadClick] = useState(false);
-	const [replyJumpLatestVisible, setReplyJumpLatestVisible] = useState(false);
-	const [replyJumpReturnVisible, setReplyJumpReturnVisible] = useState(false);
 	const [scrollSettleToken, setScrollSettleToken] = useState(0);
-	const replyJumpLatestRevealAllowedRef = useRef(false);
-	const replyJumpPendingManualRevealRef = useRef(false);
 	const currentTimelineRoomIdRef = useRef(timeline.roomId);
 
 	const updateFocusedMessageId = useCallback((nextMessageIdOrUpdater: FocusedMessageIdUpdater) => {
@@ -1368,8 +1360,19 @@ export const TimelineView = ({
 			return false;
 		}
 
-		const clampedOffset = Math.min(snapshot.anchorOffset, Math.max(anchorNode.offsetHeight - 1, 0));
-		scrollMessageStreamTo(Math.max(anchorNode.offsetTop + clampedOffset - VIEWPORT_ANCHOR_TOP_BIAS, 0), behavior);
+		const clampedOffset = clampViewportSnapshotAnchorOffset({
+			anchorHeight: anchorNode.offsetHeight,
+			anchorOffset: snapshot.anchorOffset,
+		});
+		scrollMessageStreamTo(
+			resolveViewportSnapshotScrollTop({
+				anchorHeight: anchorNode.offsetHeight,
+				anchorOffset: snapshot.anchorOffset,
+				anchorTop: anchorNode.offsetTop,
+				viewportAnchorTopBias: VIEWPORT_ANCHOR_TOP_BIAS,
+			}),
+			behavior,
+		);
 		currentViewportSnapshotRef.current = {
 			...snapshot,
 			anchorOffset: clampedOffset,
@@ -1411,7 +1414,7 @@ export const TimelineView = ({
 		return top >= padding && bottom <= container.clientHeight - padding;
 	}, []);
 
-	const hasRejoinedReplySource = useCallback((navigation: ReplyJumpNavigationState) => {
+	const hasRejoinedReplySource = useCallback((navigation: ReplyJumpNavigationState<UnsavedRoomViewportSnapshot>) => {
 		const container = messageStreamRef.current;
 		if (!container) {
 			return false;
@@ -1422,8 +1425,12 @@ export const TimelineView = ({
 			return isMessageComfortablyVisible(navigation.sourceMessageId);
 		}
 
-		const clampedOffset = Math.min(navigation.snapshot.anchorOffset, Math.max(anchorNode.offsetHeight - 1, 0));
-		const snapshotScrollTop = Math.max(anchorNode.offsetTop + clampedOffset - VIEWPORT_ANCHOR_TOP_BIAS, 0);
+		const snapshotScrollTop = resolveViewportSnapshotScrollTop({
+			anchorHeight: anchorNode.offsetHeight,
+			anchorOffset: navigation.snapshot.anchorOffset,
+			anchorTop: anchorNode.offsetTop,
+			viewportAnchorTopBias: VIEWPORT_ANCHOR_TOP_BIAS,
+		});
 		return Math.abs(container.scrollTop - snapshotScrollTop) <= REPLY_RETURN_SNAPSHOT_TOLERANCE_PX;
 	}, [isMessageComfortablyVisible]);
 
@@ -1492,7 +1499,10 @@ export const TimelineView = ({
 				nextExpandedMessages[messageId] = nextExpanded;
 			}
 
-			expansionToggleSnapshotRef.current = captureViewportSnapshot() ?? currentViewportSnapshotRef.current;
+			pendingExpansionToggleRestoreRef.current = {
+				roomId: timeline.roomId,
+				snapshot: captureViewportSnapshot() ?? currentViewportSnapshotRef.current,
+			};
 			commitExpandedMessages(nextExpandedMessages, {
 				[messageId]: nextExpanded ?? null,
 			});
@@ -2037,20 +2047,32 @@ export const TimelineView = ({
 		[shouldFollowBottomThroughReflow],
 	);
 
-	const clearReplyJumpReturnDismissTimer = useCallback(() => {
-		if (replyJumpReturnDismissTimerRef.current) {
-			window.clearTimeout(replyJumpReturnDismissTimerRef.current);
-			replyJumpReturnDismissTimerRef.current = null;
-		}
-	}, []);
-
-	const scheduleReplyJumpReturnDismiss = useCallback(() => {
-		clearReplyJumpReturnDismissTimer();
-		replyJumpReturnDismissTimerRef.current = window.setTimeout(() => {
-			replyJumpReturnDismissTimerRef.current = null;
-			setReplyJumpReturnVisible(false);
-		}, REPLY_RETURN_AUTO_DISMISS_MS);
-	}, [clearReplyJumpReturnDismissTimer]);
+	const {
+		dismissReplyJumpNavigation,
+		jumpReplyNavigationToLatest,
+		replyJumpLatestVisible,
+		replyJumpNavigation,
+		replyJumpReturnVisible,
+		resetReplyJumpState,
+		returnToReplySource,
+		startLoadedReplyJump,
+	} = useTimelineReplyJumpController<UnsavedRoomViewportSnapshot>({
+		captureViewportSnapshot,
+		focusLatestLoadedMessage,
+		focusMessage,
+		hasRejoinedReplySource,
+		highlightMessage,
+		isMessageComfortablyVisible,
+		markTimelineKeyboardInteraction,
+		messageRefs,
+		messageStreamRef,
+		scrollMessageIntoCenter,
+		scrollToBottom,
+		scrollToViewportSnapshot,
+		timelineMessageCount: timeline.messages.length,
+		timelineRoomId: timeline.roomId,
+		updateFocusedMessageId,
+	});
 
 	const clearUnreadDividerSettleTimer = useCallback(() => {
 		if (unreadDividerSettleTimerRef.current !== null) {
@@ -2497,63 +2519,9 @@ export const TimelineView = ({
 		startOlderHistoryLoad,
 	]);
 
-	const jumpToLoadedOriginalMessage = useCallback(
-		(sourceMessageId: string, targetMessageId: string, { focusTarget = false }: { focusTarget?: boolean } = {}) => {
-			const messageNode = messageRefs.current.get(targetMessageId);
-			if (!messageNode) {
-				return false;
-			}
-
-			const snapshot = captureViewportSnapshot();
-			const targetAlreadyVisible = isMessageComfortablyVisible(targetMessageId);
-			replyJumpLatestRevealAllowedRef.current = false;
-			replyJumpPendingManualRevealRef.current = false;
-			setReplyJumpLatestVisible(false);
-			if (replyJumpLatestRevealTimerRef.current) {
-				window.clearTimeout(replyJumpLatestRevealTimerRef.current);
-				replyJumpLatestRevealTimerRef.current = null;
-			}
-			clearReplyJumpReturnDismissTimer();
-			if (snapshot && !targetAlreadyVisible) {
-				setReplyJumpReturnVisible(true);
-				setReplyJumpNavigation({
-					awaitingDeparture: true,
-					snapshot,
-					sourceMessageId,
-				});
-			} else {
-				setReplyJumpReturnVisible(false);
-				setReplyJumpNavigation(null);
-			}
-
-			if (!targetAlreadyVisible) {
-				scrollMessageIntoCenter(targetMessageId, 'smooth');
-			}
-			highlightMessage(targetMessageId);
-			updateFocusedMessageId(targetMessageId);
-			if (focusTarget) {
-				markTimelineKeyboardInteraction();
-				window.requestAnimationFrame(() => {
-					messageNode.focus({ preventScroll: true });
-				});
-			}
-
-			return true;
-		},
-		[
-			captureViewportSnapshot,
-			clearReplyJumpReturnDismissTimer,
-			highlightMessage,
-			isMessageComfortablyVisible,
-			markTimelineKeyboardInteraction,
-			scrollMessageIntoCenter,
-			updateFocusedMessageId,
-		],
-	);
-
 	const jumpToOriginalMessage = useCallback(
 		async (sourceMessageId: string, targetMessageId: string, { focusTarget = false }: { focusTarget?: boolean } = {}) => {
-			if (jumpToLoadedOriginalMessage(sourceMessageId, targetMessageId, { focusTarget })) {
+			if (startLoadedReplyJump(sourceMessageId, targetMessageId, { focusTarget })) {
 				return;
 			}
 
@@ -2574,7 +2542,7 @@ export const TimelineView = ({
 					}
 
 					if (
-						jumpToLoadedOriginalMessage(sourceMessageId, targetMessageId, {
+						startLoadedReplyJump(sourceMessageId, targetMessageId, {
 							focusTarget,
 						})
 					) {
@@ -2599,39 +2567,8 @@ export const TimelineView = ({
 				targetMessageId,
 			};
 		},
-		[currentMessageIds, jumpToLoadedOriginalMessage, onResolveReplyTarget],
+		[currentMessageIds, onResolveReplyTarget, startLoadedReplyJump],
 	);
-
-	const returnToReplySource = useCallback(() => {
-		if (!replyJumpNavigation) {
-			return;
-		}
-
-		const sourceMessageNode = messageRefs.current.get(replyJumpNavigation.sourceMessageId);
-		const restored = scrollToViewportSnapshot(replyJumpNavigation.snapshot, 'smooth');
-
-		if (!restored && sourceMessageNode) {
-			scrollMessageIntoCenter(replyJumpNavigation.sourceMessageId, 'smooth');
-		}
-
-		if (sourceMessageNode) {
-			highlightMessage(replyJumpNavigation.sourceMessageId);
-			window.requestAnimationFrame(() => {
-				void focusMessage(replyJumpNavigation.sourceMessageId, 'auto', 'keyboard');
-			});
-		}
-
-		if (replyJumpLatestRevealTimerRef.current) {
-			window.clearTimeout(replyJumpLatestRevealTimerRef.current);
-			replyJumpLatestRevealTimerRef.current = null;
-		}
-		clearReplyJumpReturnDismissTimer();
-		replyJumpLatestRevealAllowedRef.current = false;
-		replyJumpPendingManualRevealRef.current = false;
-		setReplyJumpLatestVisible(false);
-		setReplyJumpReturnVisible(false);
-		setReplyJumpNavigation(null);
-	}, [clearReplyJumpReturnDismissTimer, focusMessage, highlightMessage, replyJumpNavigation, scrollMessageIntoCenter, scrollToViewportSnapshot]);
 
 	const jumpToMention = useCallback(() => {
 		if (!mentionTargetMessageId) {
@@ -3157,33 +3094,6 @@ export const TimelineView = ({
 		[closeMessageContextMenu, showTimelineToast],
 	);
 
-	const dismissReplyJumpNavigation = useCallback(() => {
-		if (replyJumpLatestRevealTimerRef.current) {
-			window.clearTimeout(replyJumpLatestRevealTimerRef.current);
-			replyJumpLatestRevealTimerRef.current = null;
-		}
-
-		clearReplyJumpReturnDismissTimer();
-		replyJumpLatestRevealAllowedRef.current = false;
-		replyJumpPendingManualRevealRef.current = false;
-		setReplyJumpLatestVisible(false);
-		setReplyJumpReturnVisible(false);
-		setReplyJumpNavigation(null);
-	}, [clearReplyJumpReturnDismissTimer]);
-
-	const jumpReplyNavigationToLatest = useCallback(
-		({ behavior = 'auto', focusTarget = false }: { behavior?: ScrollBehavior; focusTarget?: boolean } = {}) => {
-			if (!replyJumpNavigation) {
-				return false;
-			}
-
-			dismissReplyJumpNavigation();
-			scrollToBottom(behavior);
-			return focusTarget ? focusLatestLoadedMessage('keyboard') : true;
-		},
-		[dismissReplyJumpNavigation, focusLatestLoadedMessage, replyJumpNavigation, scrollToBottom],
-	);
-
 	const jumpToUnreadOrLatest = useCallback(
 		({
 			behavior = 'smooth',
@@ -3463,13 +3373,7 @@ export const TimelineView = ({
 		expandedMessagesRef.current = persistedExpansion;
 		appendedMessageExpansionDefaultsRef.current = {};
 		pendingLocalSendExpansionRef.current = false;
-		replyJumpLatestRevealAllowedRef.current = false;
-		replyJumpPendingManualRevealRef.current = false;
-		if (replyJumpLatestRevealTimerRef.current) {
-			window.clearTimeout(replyJumpLatestRevealTimerRef.current);
-			replyJumpLatestRevealTimerRef.current = null;
-		}
-		clearReplyJumpReturnDismissTimer();
+		resetReplyJumpState();
 		bottomReflowFollowRoomIdRef.current = timeline.roomId;
 		bottomReflowFollowUntilRef.current = 0;
 		lastReadRequestAnchorRef.current = null;
@@ -3484,13 +3388,10 @@ export const TimelineView = ({
 		setMessageContextMenu(null);
 		setMessageContextMenuPosition(null);
 		setShowJumpToMention(false);
-		setReplyJumpLatestVisible(false);
-		setReplyJumpReturnVisible(false);
-		setReplyJumpNavigation(null);
 		cancelTimelineScrollAnimation();
 		clearSequentialBottomJump();
 		onCloseAuthorQuickPanel?.();
-	}, [cancelTimelineScrollAnimation, clearReplyJumpReturnDismissTimer, clearSequentialBottomJump, onCloseAuthorQuickPanel, timeline.roomId, updateTimelineInteractionMode]);
+	}, [cancelTimelineScrollAnimation, clearSequentialBottomJump, onCloseAuthorQuickPanel, resetReplyJumpState, timeline.roomId, updateTimelineInteractionMode]);
 
 	useEffect(() => {
 		if (!timeline.unreadAnchorMessageId) {
@@ -3596,24 +3497,14 @@ export const TimelineView = ({
 				viewportPersistTimerRef.current = null;
 			}
 
-				if (sequentialBottomJumpTimerRef.current) {
-					window.clearTimeout(sequentialBottomJumpTimerRef.current);
-					sequentialBottomJumpTimerRef.current = null;
-				}
-
-				if (unreadDividerSettleTimerRef.current) {
-					window.clearTimeout(unreadDividerSettleTimerRef.current);
-					unreadDividerSettleTimerRef.current = null;
-				}
-
-				if (replyJumpLatestRevealTimerRef.current) {
-					window.clearTimeout(replyJumpLatestRevealTimerRef.current);
-				replyJumpLatestRevealTimerRef.current = null;
+			if (sequentialBottomJumpTimerRef.current) {
+				window.clearTimeout(sequentialBottomJumpTimerRef.current);
+				sequentialBottomJumpTimerRef.current = null;
 			}
 
-			if (replyJumpReturnDismissTimerRef.current) {
-				window.clearTimeout(replyJumpReturnDismissTimerRef.current);
-				replyJumpReturnDismissTimerRef.current = null;
+			if (unreadDividerSettleTimerRef.current) {
+				window.clearTimeout(unreadDividerSettleTimerRef.current);
+				unreadDividerSettleTimerRef.current = null;
 			}
 
 			if (contentResizeAdjustmentFrameRef.current !== null) {
@@ -3764,138 +3655,11 @@ export const TimelineView = ({
 
 		pendingResolvedReplyJumpRef.current = null;
 		window.requestAnimationFrame(() => {
-			void jumpToLoadedOriginalMessage(pendingReplyJump.sourceMessageId, pendingReplyJump.targetMessageId, {
+			startLoadedReplyJump(pendingReplyJump.sourceMessageId, pendingReplyJump.targetMessageId, {
 				focusTarget: pendingReplyJump.focusTarget,
 			});
 		});
-	}, [currentMessageIds, jumpToLoadedOriginalMessage]);
-
-	useEffect(() => {
-		if (!replyJumpNavigation) {
-			clearReplyJumpReturnDismissTimer();
-			return;
-		}
-
-		const resetReplyJumpLatestReveal = () => {
-			if (replyJumpLatestRevealTimerRef.current) {
-				window.clearTimeout(replyJumpLatestRevealTimerRef.current);
-				replyJumpLatestRevealTimerRef.current = null;
-			}
-
-			replyJumpLatestRevealAllowedRef.current = false;
-			replyJumpPendingManualRevealRef.current = false;
-			setReplyJumpLatestVisible(false);
-		};
-
-		if (replyJumpNavigation.awaitingDeparture) {
-			clearReplyJumpReturnDismissTimer();
-			resetReplyJumpLatestReveal();
-		} else if (!replyJumpLatestRevealAllowedRef.current && !replyJumpLatestRevealTimerRef.current) {
-			replyJumpLatestRevealTimerRef.current = window.setTimeout(() => {
-				replyJumpLatestRevealTimerRef.current = null;
-				replyJumpLatestRevealAllowedRef.current = true;
-				if (!replyJumpPendingManualRevealRef.current || hasRejoinedReplySource(replyJumpNavigation)) {
-					return;
-				}
-
-				replyJumpPendingManualRevealRef.current = false;
-				setReplyJumpLatestVisible(true);
-			}, REPLY_JUMP_LATEST_REVEAL_DELAY_MS);
-		}
-
-		if (!replyJumpNavigation.awaitingDeparture && replyJumpReturnVisible && !replyJumpReturnDismissTimerRef.current) {
-			scheduleReplyJumpReturnDismiss();
-		}
-
-		const syncReplyReturnVisibility = () => {
-			const rejoinedSource = hasRejoinedReplySource(replyJumpNavigation);
-			if (replyJumpNavigation.awaitingDeparture) {
-				if (rejoinedSource) {
-					return;
-				}
-
-				setReplyJumpNavigation((currentNavigation) =>
-					currentNavigation === replyJumpNavigation
-						? {
-								...currentNavigation,
-								awaitingDeparture: false,
-						  }
-						: currentNavigation,
-				);
-				return;
-			}
-
-			if (!rejoinedSource) {
-				return;
-			}
-
-			resetReplyJumpLatestReveal();
-			setReplyJumpNavigation((currentNavigation) => (currentNavigation === replyJumpNavigation ? null : currentNavigation));
-		};
-
-		syncReplyReturnVisibility();
-
-		const container = messageStreamRef.current;
-		if (!container) {
-			return;
-		}
-
-		const revealLatestAction = () => {
-			if (replyJumpNavigation.awaitingDeparture) {
-				return;
-			}
-
-			if (replyJumpReturnVisible) {
-				scheduleReplyJumpReturnDismiss();
-			}
-
-			if (!replyJumpLatestRevealAllowedRef.current) {
-				replyJumpPendingManualRevealRef.current = true;
-				return;
-			}
-
-			replyJumpPendingManualRevealRef.current = false;
-			setReplyJumpLatestVisible(true);
-		};
-
-		const handleTouchMove = () => {
-			revealLatestAction();
-		};
-
-		const handleWheel = () => {
-			revealLatestAction();
-		};
-
-		const handleKeyDown = (event: KeyboardEvent) => {
-			if (!['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', 'Home', 'End'].includes(event.key) && !isSpaceKey(event)) {
-				return;
-			}
-
-			revealLatestAction();
-		};
-
-		container.addEventListener('scroll', syncReplyReturnVisibility, { passive: true });
-		container.addEventListener('touchmove', handleTouchMove, { passive: true });
-		container.addEventListener('wheel', handleWheel, { passive: true });
-		window.addEventListener('resize', syncReplyReturnVisibility);
-		window.addEventListener('keydown', handleKeyDown);
-
-		return () => {
-			container.removeEventListener('scroll', syncReplyReturnVisibility);
-			container.removeEventListener('touchmove', handleTouchMove);
-			container.removeEventListener('wheel', handleWheel);
-			window.removeEventListener('resize', syncReplyReturnVisibility);
-			window.removeEventListener('keydown', handleKeyDown);
-		};
-	}, [
-		clearReplyJumpReturnDismissTimer,
-		hasRejoinedReplySource,
-		replyJumpNavigation,
-		replyJumpReturnVisible,
-		scheduleReplyJumpReturnDismiss,
-		timeline.messages.length,
-		timeline.roomId,
-	]);
+	}, [currentMessageIds, startLoadedReplyJump]);
 
 	useEffect(() => {
 		loadedExpansionRoomIdRef.current = timeline.roomId;
@@ -3930,6 +3694,20 @@ export const TimelineView = ({
 	useLayoutEffect(() => {
 		measureMountedMessageContentHeights();
 	}, [measureMountedMessageContentHeights]);
+
+	useLayoutEffect(() => {
+		const pendingExpansionToggleRestore = pendingExpansionToggleRestoreRef.current;
+		if (!pendingExpansionToggleRestore) {
+			return;
+		}
+
+		pendingExpansionToggleRestoreRef.current = null;
+		if (pendingExpansionToggleRestore.roomId !== timeline.roomId || !pendingExpansionToggleRestore.snapshot) {
+			return;
+		}
+
+		scrollToViewportSnapshot(pendingExpansionToggleRestore.snapshot, 'auto');
+	}, [expandedMessages, scrollToViewportSnapshot, timeline.roomId]);
 
 	useEffect(() => {
 		if (typeof ResizeObserver === 'undefined') {
@@ -3972,11 +3750,7 @@ export const TimelineView = ({
 				}
 
 				if (hasChanges) {
-					const toggleSnapshot = expansionToggleSnapshotRef.current;
-					if (toggleSnapshot) {
-						expansionToggleSnapshotRef.current = null;
-						scheduleContentResizeAdjustment('anchor', toggleSnapshot);
-					} else if (shouldPreserveBottom) {
+					if (shouldPreserveBottom) {
 						scheduleContentResizeAdjustment('bottom', viewportSnapshot);
 					} else if (!shouldSuspendAnchorPreservationDuringProgrammaticScroll && viewportSnapshot) {
 						scheduleContentResizeAdjustment('anchor', viewportSnapshot);

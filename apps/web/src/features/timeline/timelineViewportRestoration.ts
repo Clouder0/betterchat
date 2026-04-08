@@ -18,6 +18,35 @@ export type ActiveHistoryPrependRestore<TSnapshot> = {
 	startedAt: number;
 };
 
+export const clampViewportSnapshotAnchorOffset = ({
+	anchorHeight,
+	anchorOffset,
+}: {
+	anchorHeight: number;
+	anchorOffset: number;
+}) => Math.min(anchorOffset, Math.max(anchorHeight - 1, 0));
+
+export const resolveViewportSnapshotScrollTop = ({
+	anchorHeight,
+	anchorOffset,
+	anchorTop,
+	viewportAnchorTopBias,
+}: {
+	anchorHeight: number;
+	anchorOffset: number;
+	anchorTop: number;
+	viewportAnchorTopBias: number;
+}) =>
+	Math.max(
+		anchorTop +
+			clampViewportSnapshotAnchorOffset({
+				anchorHeight,
+				anchorOffset,
+			}) -
+			viewportAnchorTopBias,
+		0,
+	);
+
 export const resolveHistoryPrependRestoreScrollTop = ({
 	baselineScrollHeight,
 	baselineScrollTop,
