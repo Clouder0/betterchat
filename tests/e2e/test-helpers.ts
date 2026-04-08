@@ -1,5 +1,108 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, type ConsoleMessage, type Locator, type Page } from '@playwright/test';
 import { deflateSync } from 'node:zlib';
+
+export const TIMELINE_VIEWPORT_ANCHOR_TOP_BIAS = 12;
+
+type UnexpectedBrowserError = {
+	kind: 'console-error' | 'page-error';
+	location?: string;
+	text: string;
+};
+
+type UnexpectedBrowserErrorGuard = {
+	dispose: () => void;
+	expectNone: () => void;
+	read: () => UnexpectedBrowserError[];
+	reset: () => void;
+};
+
+const matchesAllowedBrowserErrorPattern = (text: string, allowedPatterns: readonly RegExp[]) =>
+	allowedPatterns.some((pattern) => pattern.test(text));
+
+const installedUnexpectedBrowserErrorGuards = new WeakMap<Page, UnexpectedBrowserErrorGuard>();
+
+export const installUnexpectedBrowserErrorGuard = (
+	page: Page,
+	{
+		allowConsoleErrors = [],
+		allowPageErrors = [],
+	}: {
+		allowConsoleErrors?: readonly RegExp[];
+		allowPageErrors?: readonly RegExp[];
+	} = {},
+) => {
+	const errors: UnexpectedBrowserError[] = [];
+
+	const onConsole = (message: ConsoleMessage) => {
+		if (message.type() !== 'error') {
+			return;
+		}
+
+		const text = message.text();
+		if (matchesAllowedBrowserErrorPattern(text, allowConsoleErrors)) {
+			return;
+		}
+
+		const location = message.location();
+		errors.push({
+			kind: 'console-error',
+			location: location.url ? `${location.url}:${location.lineNumber}:${location.columnNumber}` : undefined,
+			text,
+		});
+	};
+
+	const onPageError = (error: Error) => {
+		const text = error.stack ?? error.message;
+		if (matchesAllowedBrowserErrorPattern(text, allowPageErrors)) {
+			return;
+		}
+
+		errors.push({
+			kind: 'page-error',
+			text,
+		});
+	};
+
+	page.on('console', onConsole);
+	page.on('pageerror', onPageError);
+
+	const guard: UnexpectedBrowserErrorGuard = {
+		dispose() {
+			page.off('console', onConsole);
+			page.off('pageerror', onPageError);
+		},
+		expectNone() {
+			expect(errors).toEqual([]);
+		},
+		read() {
+			return [...errors];
+		},
+		reset() {
+			errors.splice(0, errors.length);
+		},
+	};
+
+	installedUnexpectedBrowserErrorGuards.set(page, guard);
+	return guard;
+};
+
+export const resetUnexpectedBrowserErrorGuard = (page: Page) => {
+	installedUnexpectedBrowserErrorGuards.get(page)?.reset();
+};
+
+export const expectNoUnexpectedBrowserErrors = (page: Page) => {
+	installedUnexpectedBrowserErrorGuards.get(page)?.expectNone();
+};
+
+export const disposeUnexpectedBrowserErrorGuard = (page: Page) => {
+	const guard = installedUnexpectedBrowserErrorGuards.get(page);
+	if (!guard) {
+		return;
+	}
+
+	guard.dispose();
+	installedUnexpectedBrowserErrorGuards.delete(page);
+};
 
 export const tinyPngFixture = {
 	buffer: Buffer.from([
@@ -244,6 +347,43 @@ export const scrollTimelineToBottom = async (page: Page) => {
 
 export const readTimelineBottomGap = async (timeline: Locator) =>
 	timeline.evaluate((node) => Math.max(node.scrollHeight - (node.scrollTop + node.clientHeight), 0));
+
+export const readTimelineViewportStateForMessage = async (timeline: Locator, messageTestId: string) =>
+	timeline.evaluate(
+		(node, { anchorTopBias, messageTestId: targetMessageTestId }) => {
+			const target = node.querySelector<HTMLElement>(`[data-testid="${targetMessageTestId}"]`);
+			if (!target) {
+				throw new Error(`missing target message: ${targetMessageTestId}`);
+			}
+
+			const anchorTop = node.scrollTop + anchorTopBias;
+			let anchorMessageId: string | null = null;
+			let anchorOffset: number | null = null;
+			for (const messageNode of node.querySelectorAll<HTMLElement>('article[data-message-id]')) {
+				const messageBottom = messageNode.offsetTop + messageNode.offsetHeight;
+				if (messageBottom <= anchorTop) {
+					continue;
+				}
+
+				anchorMessageId = messageNode.dataset.messageId ?? null;
+				anchorOffset = Math.max(anchorTop - messageNode.offsetTop, 0);
+				break;
+			}
+
+			return {
+				anchorMessageId,
+				anchorOffset,
+				scrollTop: node.scrollTop,
+				targetHeight: target.offsetHeight,
+				targetTop: target.offsetTop,
+				viewportTopWithinTarget: node.scrollTop - target.offsetTop,
+			};
+		},
+		{
+			anchorTopBias: TIMELINE_VIEWPORT_ANCHOR_TOP_BIAS,
+			messageTestId,
+		},
+	);
 
 const commandOrControl = process.platform === 'darwin' ? 'Meta' : 'Control';
 

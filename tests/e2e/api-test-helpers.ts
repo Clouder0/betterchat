@@ -2,31 +2,46 @@ import { readFileSync } from 'node:fs';
 
 import { expect, type Page } from '@playwright/test';
 
-import { waitForRoomLoadingToFinish } from './test-helpers';
+import { resetUnexpectedBrowserErrorGuard, waitForRoomLoadingToFinish } from './test-helpers';
+
+type SeedManifestMessage = {
+	attachmentTitle?: string;
+	messageId?: string;
+	parentMessageId?: string;
+	roomKey: string;
+	text?: string;
+};
+
+type SeedManifestRoom = {
+	favoriteForAlice?: boolean;
+	hiddenForAlice?: boolean;
+	roomId: string;
+	title: string;
+};
+
+type SeedManifestUser = {
+	displayName: string;
+	userId: string;
+	username: string;
+};
 
 type SeedManifest = {
-	messages: Record<
-		string,
-		{
-			messageId?: string;
-			roomKey: string;
-			text?: string;
-		}
-	>;
-	rooms: Record<
-		string,
-		{
-			roomId: string;
-			title: string;
-		}
-	>;
-	users: Record<
-		string,
-		{
-			displayName: string;
-			username: string;
-		}
-	>;
+	messages: Record<string, SeedManifestMessage> & {
+		dmBobUnread: SeedManifestMessage;
+	};
+	rooms: Record<string, SeedManifestRoom> & {
+		dmBob: SeedManifestRoom;
+		dmCharlie: SeedManifestRoom;
+		privateHidden: SeedManifestRoom;
+		privateMain: SeedManifestRoom;
+		publicEmpty: SeedManifestRoom;
+		publicMain: SeedManifestRoom;
+		publicReadonly: SeedManifestRoom;
+	};
+	users: Record<string, SeedManifestUser> & {
+		alice: SeedManifestUser;
+		bob: SeedManifestUser;
+	};
 };
 
 type BetterChatSession = {
@@ -65,6 +80,7 @@ export const loginAsApiUser = async (
 
 	await expect(page.getByTestId('app-shell')).toBeVisible();
 	await waitForRoomLoadingToFinish(page);
+	resetUnexpectedBrowserErrorGuard(page);
 };
 
 export const createBetterChatSession = async ({
@@ -157,7 +173,7 @@ export const betterChatUploadImage = async <T,>(
 	},
 ): Promise<T> => {
 	const formData = new FormData();
-	formData.set('file', new Blob([buffer], { type: mimeType }), fileName);
+	formData.set('file', new Blob([new Uint8Array(buffer)], { type: mimeType }), fileName);
 	if (text) {
 		formData.set('text', text);
 	}

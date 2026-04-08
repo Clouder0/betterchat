@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs';
 import { defineConfig } from '@playwright/test';
 
 const host = process.env.BETTERCHAT_E2E_HOST ?? '127.0.0.1';
@@ -6,7 +7,11 @@ const defaultPort = apiMode === 'api' ? '3411' : '3401';
 const port = Number(process.env.BETTERCHAT_E2E_PORT ?? defaultPort);
 const baseURL = process.env.BETTERCHAT_E2E_BASE_URL ?? `http://${host}:${port}`;
 const apiBaseUrl = process.env.BETTERCHAT_E2E_API_BASE_URL ?? 'http://127.0.0.1:3200';
-const chromiumExecutablePath = process.env.BETTERCHAT_E2E_CHROMIUM_PATH ?? '/usr/bin/chromium';
+const requestedChromiumExecutablePath = process.env.BETTERCHAT_E2E_CHROMIUM_PATH;
+const systemChromiumExecutablePath = '/usr/bin/chromium';
+const chromiumExecutablePath =
+	requestedChromiumExecutablePath
+		?? (existsSync(systemChromiumExecutablePath) ? systemChromiumExecutablePath : undefined);
 
 export default defineConfig({
 	testDir: '.',
@@ -27,9 +32,13 @@ export default defineConfig({
 		trace: 'retain-on-failure',
 		screenshot: 'only-on-failure',
 		video: 'retain-on-failure',
-		launchOptions: {
-			executablePath: chromiumExecutablePath,
-		},
+		...(chromiumExecutablePath
+			? {
+					launchOptions: {
+						executablePath: chromiumExecutablePath,
+					},
+			  }
+			: {}),
 	},
 	webServer: {
 		command: `bun run dev -- --host ${host} --port ${port} --strictPort`,

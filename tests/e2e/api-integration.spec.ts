@@ -16,11 +16,16 @@ import {
 	createLargeBmpFixture,
 	createLargePngFixture,
 	collapseSidebar,
+	disposeUnexpectedBrowserErrorGuard,
+	expectNoUnexpectedBrowserErrors,
+	installUnexpectedBrowserErrorGuard,
 	isSidebarCollapsed,
 	openRoom,
 	readSidebarShellState,
+	readTimelineViewportStateForMessage,
 	readTimelineBottomGap,
 	scrollTimelineToBottom,
+	TIMELINE_VIEWPORT_ANCHOR_TOP_BIAS,
 	tinyPngFixture,
 	waitForRoomLoadingToFinish,
 	waitForSidebarCollapsedSettle,
@@ -32,6 +37,14 @@ import {
 test.skip(!apiModeEnabled, 'API-mode suite');
 
 const betterChatApiBaseUrl = process.env.BETTERCHAT_E2E_API_BASE_URL ?? 'http://127.0.0.1:3200';
+type BrowserSocketPayload = Parameters<WebSocket['send']>[0];
+type RealtimeWatchCommand = {
+	type: 'watch-conversation' | 'watch-directory';
+	conversationId?: string;
+	conversationVersion?: string;
+	directoryVersion?: string;
+	timelineVersion?: string;
+};
 
 const conversationMessageBody = ({
 	replyToMessageId,
@@ -188,52 +201,28 @@ const installNotificationRecorder = async (page: Page) => {
 
 const installRealtimeWatchCommandRecorder = async (page: Page) => {
 	await page.addInitScript(() => {
-		const recordedCommands: Array<{
-			type: string;
-			conversationId?: string;
-			conversationVersion?: string;
-			directoryVersion?: string;
-			timelineVersion?: string;
-		}> = [];
-		const originalSend = WebSocket.prototype.send;
+		const recordedCommands: RealtimeWatchCommand[] = [];
+		const originalSend: (this: WebSocket, data: BrowserSocketPayload) => void = WebSocket.prototype.send;
 
-		WebSocket.prototype.send = function patchedSend(data: string | ArrayBufferLike | Blob | ArrayBufferView) {
+		WebSocket.prototype.send = function patchedSend(data: BrowserSocketPayload) {
 			if (typeof data === 'string') {
 				try {
-					const parsed = JSON.parse(data) as {
-						type?: string;
-						conversationId?: string;
-						conversationVersion?: string;
-						directoryVersion?: string;
-						timelineVersion?: string;
-					};
+					const parsed = JSON.parse(data) as Partial<RealtimeWatchCommand>;
 					if (parsed.type === 'watch-directory' || parsed.type === 'watch-conversation') {
-						recordedCommands.push(parsed as {
-							type: string;
-							conversationId?: string;
-							conversationVersion?: string;
-							directoryVersion?: string;
-							timelineVersion?: string;
-						});
+						recordedCommands.push(parsed as RealtimeWatchCommand);
 					}
 				} catch {
 					// Ignore non-JSON websocket payloads.
 				}
 			}
 
-			return originalSend.call(this, data);
+			return Reflect.apply(originalSend, this, [data]);
 		};
 
 		(
 			window as Window & {
 				__betterchatClearRealtimeWatchCommands?: () => void;
-				__betterchatRealtimeWatchCommands?: Array<{
-					type: string;
-					conversationId?: string;
-					conversationVersion?: string;
-					directoryVersion?: string;
-					timelineVersion?: string;
-				}>;
+				__betterchatRealtimeWatchCommands?: RealtimeWatchCommand[];
 			}
 		).__betterchatRealtimeWatchCommands = recordedCommands;
 		(
@@ -260,13 +249,7 @@ const readRecordedRealtimeWatchCommands = (page: Page) =>
 		const commands =
 			(
 				window as Window & {
-					__betterchatRealtimeWatchCommands?: Array<{
-						type: string;
-						conversationId?: string;
-						conversationVersion?: string;
-						directoryVersion?: string;
-						timelineVersion?: string;
-					}>;
+					__betterchatRealtimeWatchCommands?: RealtimeWatchCommand[];
 				}
 			).__betterchatRealtimeWatchCommands ?? [];
 		return [...commands];
@@ -341,7 +324,36 @@ const resolveDirectoryAttention = (entry: DirectorySnapshot['entries'][number] |
 	};
 };
 
+const createDeferred = <T,>() => {
+	let resolve!: (value: T | PromiseLike<T>) => void;
+	const promise = new Promise<T>((nextResolve) => {
+		resolve = nextResolve;
+	});
+	return { promise, resolve };
+};
+
 test.describe('api integration', () => {
+	test.beforeEach(async ({ page }) => {
+		installUnexpectedBrowserErrorGuard(page);
+	});
+
+	test.afterEach(async ({ page }, testInfo) => {
+		try {
+			if (testInfo.status === testInfo.expectedStatus) {
+				expectNoUnexpectedBrowserErrors(page);
+			}
+		} finally {
+			disposeUnexpectedBrowserErrorGuard(page);
+		}
+	});
+
+	test('loads the anonymous login page without protected-route or favicon console noise', async ({ page }) => {
+		await page.goto('/login');
+
+		await expect(page.getByTestId('login-page')).toBeVisible();
+		await expect(page.locator('link[rel="icon"]')).toHaveAttribute('href', '/favicon.svg');
+	});
+
 	test('collapses sidebar by dragging resize rail past snap threshold and settles fully collapsed', async ({ page }) => {
 		await page.setViewportSize({ width: 1440, height: 980 });
 		await loginAsApiUser(page, {
@@ -468,7 +480,7 @@ test.describe('api integration', () => {
 		await expect(page.getByTestId('sidebar-search')).toBeVisible();
 	});
 
-	test('does not replay watch commands after realtime updates advance cached versions', async ({ page }) => {
+	test('establishes realtime watch subscriptions and does not replay them after cached versions advance', async ({ page }) => {
 		const manifest = readSeedManifest();
 		const room = manifest.rooms.publicEmpty;
 		const senderSession = await createBetterChatSession({
@@ -482,7 +494,19 @@ test.describe('api integration', () => {
 		});
 		await openRoom(page, room.roomId);
 		await waitForRoomLoadingToFinish(page);
-		await page.waitForTimeout(250);
+		await expect
+			.poll(() => readRecordedRealtimeWatchCommands(page))
+			.toEqual(
+				expect.arrayContaining([
+					expect.objectContaining({
+						type: 'watch-directory',
+					}),
+					expect.objectContaining({
+						conversationId: room.roomId,
+						type: 'watch-conversation',
+					}),
+				]),
+			);
 		await clearRecordedRealtimeWatchCommands(page);
 
 		const probeText = `[betterchat][e2e] realtime watch replay ${Date.now()}`;
@@ -640,14 +664,8 @@ test.describe('api integration', () => {
 			password: 'AlicePass123!',
 		});
 		let capturedSubmissionId: string | null = null;
-		let releaseSendResponse: (() => void) | null = null;
-		let markResponseFetched: (() => void) | null = null;
-		const releaseSendResponsePromise = new Promise<void>((resolve) => {
-			releaseSendResponse = resolve;
-		});
-		const responseFetchedPromise = new Promise<void>((resolve) => {
-			markResponseFetched = resolve;
-		});
+		const releaseSendResponse = createDeferred<void>();
+		const responseFetched = createDeferred<void>();
 
 		await page.route(new RegExp(`/api/conversations/${room.roomId}/messages$`), async (route) => {
 			if (route.request().method() !== 'POST') {
@@ -664,8 +682,8 @@ test.describe('api integration', () => {
 			capturedSubmissionId = typeof payload.submissionId === 'string' ? payload.submissionId : null;
 
 			const response = await route.fetch();
-			markResponseFetched?.();
-			await releaseSendResponsePromise;
+			responseFetched.resolve();
+			await releaseSendResponse.promise;
 			await route.fulfill({ response });
 		});
 
@@ -681,7 +699,7 @@ test.describe('api integration', () => {
 		await page.getByTestId('composer-send').click();
 
 		await expect.poll(() => capturedSubmissionId).toBeTruthy();
-		await responseFetchedPromise;
+		await responseFetched.promise;
 		const submissionId = capturedSubmissionId!;
 
 		await expect.poll(async () => {
@@ -698,7 +716,7 @@ test.describe('api integration', () => {
 		await page.waitForTimeout(1_200);
 		await expect(matchingRows).toHaveCount(1);
 
-		releaseSendResponse?.();
+		releaseSendResponse.resolve();
 
 		const deliveredRow = page.getByTestId(`timeline-message-${submissionId}`);
 		await expect(deliveredRow).toContainText(text);
@@ -1833,6 +1851,83 @@ const liveHistoryProbe = {
 		await expect(page.getByTestId('composer-image-trigger')).toHaveCount(0);
 	});
 
+	test('keeps the viewport anchored when folding an expanded long historical message in API mode', async ({ page }) => {
+		const manifest = readSeedManifest();
+		const room = manifest.rooms.publicEmpty;
+		const aliceSession = await createBetterChatSession({
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		const longMessage = [
+			`[betterchat][e2e] api fold anchor ${Date.now()}`,
+			'',
+			'```ts',
+			"const snapshot = { room: 'api-mode-anchor', source: 'historical' };",
+			'snapshot.room;',
+			'snapshot.source;',
+			'console.log(snapshot);',
+			'```',
+			'',
+			'这里再补一段正文，确保消息在时间线里会被识别为需要折叠的历史长消息。',
+		].join('\n');
+
+		const sent = await betterChatPostJson<CreateConversationMessageResponse>(
+			aliceSession,
+			`/api/conversations/${room.roomId}/messages`,
+			conversationMessageBody({ text: longMessage }),
+		);
+		const messageId = sent.message.id;
+		if (!messageId) {
+			throw new Error('Expected BetterChat send response to include a canonical message id.');
+		}
+
+		await loginAsApiUser(page, {
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		await openRoom(page, room.roomId);
+		await waitForRoomLoadingToFinish(page);
+
+		const timeline = page.getByTestId('timeline');
+		const message = page.getByTestId(`timeline-message-${messageId}`);
+		const content = page.getByTestId(`timeline-message-content-${messageId}`);
+		const toggle = page.getByTestId(`timeline-message-toggle-${messageId}`);
+
+		await message.scrollIntoViewIfNeeded();
+		await expect(content).toHaveAttribute('data-collapsed', 'true');
+		await toggle.click();
+		await expect(content).toHaveAttribute('data-collapsed', 'false');
+
+		await timeline.evaluate((node, targetTestId) => {
+			const target = node.querySelector<HTMLElement>(`[data-testid="${targetTestId}"]`);
+			if (!target) {
+				throw new Error(`missing target message: ${targetTestId}`);
+			}
+
+			node.scrollTop = Math.max(target.offsetTop + 180, 0);
+		}, `timeline-message-${messageId}`);
+
+		const beforeToggle = await readTimelineViewportStateForMessage(timeline, `timeline-message-${messageId}`);
+		expect(beforeToggle.anchorMessageId).toBe(messageId);
+		expect(beforeToggle.anchorOffset).not.toBeNull();
+
+		await toggle.evaluate((node) => {
+			(node as HTMLButtonElement).click();
+		});
+		await expect(content).toHaveAttribute('data-collapsed', 'true');
+
+		const afterToggle = await readTimelineViewportStateForMessage(timeline, `timeline-message-${messageId}`);
+		const expectedScrollTop = Math.max(
+			afterToggle.targetTop +
+				Math.min(beforeToggle.anchorOffset ?? 0, Math.max(afterToggle.targetHeight - 1, 0)) -
+				TIMELINE_VIEWPORT_ANCHOR_TOP_BIAS,
+			0,
+		);
+
+		expect(afterToggle.anchorMessageId).toBe(messageId);
+		expect(Math.abs(afterToggle.scrollTop - expectedScrollTop)).toBeLessThanOrEqual(8);
+	});
+
 	test('uploads an image through BetterChat and renders it in the live shell', async ({ page }) => {
 		const manifest = readSeedManifest();
 		const room = manifest.rooms.publicEmpty;
@@ -2002,7 +2097,7 @@ const liveHistoryProbe = {
 			width: 1880,
 			height: 1880,
 		});
-		let interceptedUploadBody: Buffer | null = null;
+		let interceptedUploadBodyLatin1 = '';
 		let interceptedContentType = '';
 
 		await page.route(new RegExp(`/api/conversations/${room.roomId}/media$`), async (route) => {
@@ -2011,7 +2106,7 @@ const liveHistoryProbe = {
 				return;
 			}
 
-			interceptedUploadBody = route.request().postDataBuffer();
+			interceptedUploadBodyLatin1 = route.request().postDataBuffer()?.toString('latin1') ?? '';
 			interceptedContentType = route.request().headers()['content-type'] ?? '';
 
 			await route.fulfill({
@@ -2075,16 +2170,17 @@ const liveHistoryProbe = {
 		});
 		await expect(newestMessage.locator('[data-testid^="timeline-message-toggle-"]')).toContainText('收起');
 		await expect(newestMessage.getByRole('button', { name: `查看图片：${largeBmpFixture.fileName}` })).toBeVisible();
-		await expect(page.getByTestId('composer-image-preview')).toHaveCount(0);
-		await expect.poll(async () => readTimelineBottomGap(page.getByTestId('timeline'))).toBeLessThan(12);
-		expect(interceptedContentType).toContain('multipart/form-data');
-		expect(interceptedUploadBody).not.toBeNull();
-		const uploadBody = interceptedUploadBody?.toString('latin1') ?? '';
-		expect(uploadBody).toContain(`filename="${largeBmpFixture.fileName}"`);
-		expect(uploadBody).toContain(`Content-Type: ${largeBmpFixture.mimeType}`);
-		expect(uploadBody).not.toContain('filename="image.webp"');
-		expect(uploadBody).not.toContain('Content-Type: image/webp');
-	});
+			await expect(page.getByTestId('composer-image-preview')).toHaveCount(0);
+			await expect.poll(async () => readTimelineBottomGap(page.getByTestId('timeline'))).toBeLessThan(12);
+			expect(interceptedContentType).toContain('multipart/form-data');
+			if (!interceptedUploadBodyLatin1) {
+				throw new Error('expected the browser upload body to be intercepted');
+			}
+			expect(interceptedUploadBodyLatin1).toContain(`filename="${largeBmpFixture.fileName}"`);
+			expect(interceptedUploadBodyLatin1).toContain(`Content-Type: ${largeBmpFixture.mimeType}`);
+			expect(interceptedUploadBodyLatin1).not.toContain('filename="image.webp"');
+			expect(interceptedUploadBodyLatin1).not.toContain('Content-Type: image/webp');
+		});
 
 	test('receives realtime image uploads and stays pinned when already at the bottom', async ({ page }) => {
 		const manifest = readSeedManifest();
