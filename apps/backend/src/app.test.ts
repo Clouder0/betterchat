@@ -380,6 +380,9 @@ describe('createApp operational endpoints', () => {
           version: '7.6.0',
           siteName: 'BetterChat Test Workspace',
         },
+        session: {
+          authenticated: false,
+        },
         login: {
           passwordEnabled: false,
           registeredProviders: [
@@ -391,6 +394,78 @@ describe('createApp operational endpoints', () => {
         },
         features: {
           registerEnabled: true,
+        },
+      },
+    });
+  });
+
+  test('marks public bootstrap session state as authenticated when the request carries a valid BetterChat session', async () => {
+    let getMeCalls = 0;
+    const app = createApp(testConfig, {
+      client: createStubClient({
+        getMe: async () => {
+          getMeCalls += 1;
+          return {
+            success: true,
+            _id: authenticatedSession.userId,
+            username: authenticatedSession.username,
+            name: authenticatedSession.displayName,
+            roles: ['user'],
+          };
+        },
+      }),
+      logger: silentLogger,
+    });
+
+    const response = await app.request('http://betterchat.test/api/public/bootstrap', {
+      headers: {
+        cookie: sessionCookie(),
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(getMeCalls).toBe(1);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      data: {
+        session: {
+          authenticated: true,
+        },
+      },
+    });
+  });
+
+  test('treats stale BetterChat sessions as anonymous bootstrap and clears the stale cookie', async () => {
+    let clearSessionCalls = 0;
+    const app = createApp(testConfig, {
+      client: createStubClient({
+        getMe: async () => {
+          throw new AppError('UPSTREAM_REJECTED', 'upstream session expired', 401);
+        },
+      }),
+      logger: silentLogger,
+      snapshotService: createStubSnapshotService({
+        clearSession: () => {
+          clearSessionCalls += 1;
+        },
+      }),
+    });
+
+    const response = await app.request('http://betterchat.test/api/public/bootstrap', {
+      headers: {
+        cookie: sessionCookie(),
+      },
+    });
+
+    expect(response.status).toBe(200);
+    expect(clearSessionCalls).toBe(1);
+    expect(response.headers.get('set-cookie')).toContain(`${testConfig.sessionCookieName}=`);
+    expect(response.headers.get('set-cookie')).toContain('Max-Age=0');
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      data: {
+        session: {
+          authenticated: false,
         },
       },
     });

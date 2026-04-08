@@ -66,6 +66,9 @@ type PublicBootstrap = {
 		version: string;
 		siteName?: string;
 	};
+	session: {
+		authenticated: boolean;
+	};
 	login: {
 		passwordEnabled: boolean;
 		registeredProviders: Array<{

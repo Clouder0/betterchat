@@ -63,6 +63,7 @@ export const normalizePublicBootstrap = (
   info: UpstreamInfoResponse,
   settingsResponse: UpstreamSettingsResponse,
   oauthResponse: UpstreamOauthResponse,
+  authenticated: boolean,
 ): PublicBootstrap => {
   const settings = settingMapFrom(settingsResponse.settings);
   const registrationMode = stringSetting(settings, 'Accounts_RegistrationForm');
@@ -71,6 +72,9 @@ export const normalizePublicBootstrap = (
     server: {
       version: info.version,
       siteName: stringSetting(settings, 'Site_Name') || stringSetting(settings, 'Organization_Name'),
+    },
+    session: {
+      authenticated,
     },
     login: {
       passwordEnabled: booleanSetting(settings, 'Accounts_ShowFormLogin') ?? true,

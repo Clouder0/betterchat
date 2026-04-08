@@ -322,6 +322,7 @@ describe('BetterChat backend integration', () => {
     expect(publicBootstrapResponse.status).toBe(200);
     const publicBootstrap = (await publicBootstrapResponse.json()) as { ok: true; data: PublicBootstrap };
     expect(publicBootstrap.data.server.siteName).toBe(seedManifest.workspace.siteName);
+    expect(publicBootstrap.data.session.authenticated).toBe(false);
     expect(publicBootstrap.data.login.passwordEnabled).toBe(true);
 
     const client = new BetterChatClient(env.backendUrl);
@@ -331,6 +332,9 @@ describe('BetterChat backend integration', () => {
     expect(loginPayload.data.user.username).toBe(fixtureUsers.alice.username);
     expect(client.cookieHeader()).toBeDefined();
 
+    const authenticatedBootstrap = await client.get<PublicBootstrap>('/api/public/bootstrap');
+    expect(authenticatedBootstrap.session.authenticated).toBe(true);
+
     const workspace = await client.get<WorkspaceBootstrap>('/api/workspace');
     expect(workspace.workspace.name).toBe(seedManifest.workspace.siteName);
     expect(workspace.currentUser.username).toBe(fixtureUsers.alice.username);
@@ -339,6 +343,8 @@ describe('BetterChat backend integration', () => {
     expect(workspace.capabilities.realtimeEnabled).toBe(true);
 
     await client.logout();
+    const anonymousBootstrap = await client.get<PublicBootstrap>('/api/public/bootstrap');
+    expect(anonymousBootstrap.session.authenticated).toBe(false);
     const workspaceAfterLogout = await client.getRaw('/api/workspace');
     await expectApiError(workspaceAfterLogout, 401, 'UNAUTHENTICATED');
   });
