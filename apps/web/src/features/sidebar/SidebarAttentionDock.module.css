@@ -1,0 +1,140 @@
+.dock {
+	display: flex;
+	flex-direction: column;
+	gap: 0.58rem;
+	min-width: 0;
+}
+
+.header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75rem;
+	min-width: 0;
+}
+
+.title {
+	margin: 0;
+	font-family: var(--font-label);
+	font-size: 0.72rem;
+	letter-spacing: 0.02em;
+	color: var(--text-muted);
+}
+
+.overflow {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 1.6rem;
+	height: 1.5rem;
+	padding: 0 0.5rem;
+	border: 1px solid var(--border-soft);
+	border-radius: 999px;
+	background: var(--surface-panel);
+	color: var(--text-soft);
+	font-family: var(--font-label);
+	font-size: 0.72rem;
+	font-weight: 600;
+	line-height: 1;
+}
+
+.entries {
+	display: flex;
+	flex-direction: column;
+	gap: 0.42rem;
+	min-width: 0;
+}
+
+.entry {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr);
+	align-items: center;
+	gap: 0.6rem;
+	width: 100%;
+	min-width: 0;
+	padding: 0.58rem 0.66rem;
+	border: 1px solid color-mix(in srgb, var(--border-soft) 94%, transparent);
+	border-radius: 0.8rem;
+	background: color-mix(in srgb, var(--surface-panel) 88%, var(--surface-field));
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+	transition:
+		background 140ms ease,
+		border-color 140ms ease,
+		box-shadow 140ms ease;
+}
+
+.entry:focus-visible {
+	outline: none;
+	border-color: color-mix(in srgb, var(--accent) 18%, var(--border-strong));
+}
+
+@media (hover: hover) and (pointer: fine) {
+	.entry:hover {
+		background: color-mix(in srgb, var(--surface-panel-muted) 82%, var(--surface-field));
+		border-color: color-mix(in srgb, var(--accent) 12%, var(--border-soft));
+	}
+}
+
+.entry[data-attention-level='mention'] {
+	background: color-mix(in srgb, var(--warning) 5%, var(--surface-panel));
+	border-color: color-mix(in srgb, var(--warning) 14%, var(--border-soft));
+}
+
+.entry[data-attention-level='unread'] {
+	border-color: color-mix(in srgb, var(--accent) 12%, var(--border-soft));
+}
+
+.avatar {
+	display: grid;
+	place-items: center;
+	width: 1.9rem;
+	height: 1.9rem;
+	border-radius: 0.62rem;
+	background: color-mix(in srgb, var(--accent) 10%, var(--bg-elevated));
+	border: 1px solid var(--border-soft);
+	font-family: var(--font-label);
+	font-size: 0.74rem;
+	font-weight: 650;
+	color: color-mix(in srgb, var(--accent-strong) 18%, var(--text-strong));
+}
+
+.avatar[data-kind='group'] {
+	background: color-mix(in srgb, var(--support) 20%, var(--bg-elevated));
+}
+
+.avatar[data-kind='dm'] {
+	background: color-mix(in srgb, var(--surface-accent-soft) 88%, var(--bg-elevated));
+}
+
+.copy {
+	display: flex;
+	flex-direction: column;
+	gap: 0.14rem;
+	min-width: 0;
+}
+
+.roomTitle,
+.attentionLabel {
+	display: block;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.roomTitle {
+	font-size: 0.9rem;
+	font-weight: 620;
+	color: var(--text-strong);
+}
+
+.attentionLabel {
+	font-size: 0.78rem;
+	color: var(--text-soft);
+}
+
+.entry[data-attention-level='mention'] .attentionLabel {
+	color: color-mix(in srgb, var(--warning) 30%, var(--text-soft));
+}

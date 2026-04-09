@@ -1598,6 +1598,56 @@ const liveHistoryProbe = {
 		await expect(page.getByTestId(`sidebar-room-badge-${targetRoom.roomId}`)).toContainText('1', { timeout: 3_000 });
 	});
 
+	test('surfaces inactive DM attention in the sidebar dock without requiring sidebar scrolling', async ({ page }) => {
+		const manifest = readSeedManifest();
+		const targetRoom = manifest.rooms.dmBob;
+		const visibleRoom = manifest.rooms.publicEmpty;
+		const aliceSession = await createBetterChatSession({
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		const bobSession = await createBetterChatSession({
+			login: 'bob',
+			password: 'BobPass123!',
+		});
+		const liveText = `[betterchat][e2e] sidebar attention dock ${Date.now()}`;
+
+		const initialDirectory = await readDirectory(aliceSession);
+		for (const entry of initialDirectory.entries) {
+			await markConversationRead(aliceSession, entry.conversation.id);
+		}
+
+		await loginAsApiUser(page, {
+			login: 'alice',
+			password: 'AlicePass123!',
+		});
+		await openRoom(page, visibleRoom.roomId);
+		await waitForRoomLoadingToFinish(page);
+
+		const sidebarBody = page.getByTestId('sidebar-body');
+		await sidebarBody.evaluate((node) => {
+			node.scrollTop = 0;
+		});
+		await expect(page.getByTestId(`sidebar-attention-dock-item-${targetRoom.roomId}`)).toHaveCount(0);
+
+		await betterChatPostJson(
+			bobSession,
+			`/api/conversations/${targetRoom.roomId}/messages`,
+			conversationMessageBody({
+				text: liveText,
+			}),
+		);
+
+		const dockItem = page.getByTestId(`sidebar-attention-dock-item-${targetRoom.roomId}`);
+		await expect(dockItem).toContainText('Bob Example', { timeout: 3_000 });
+		await expect(dockItem).toContainText('1 条未读');
+		await expect.poll(async () => sidebarBody.evaluate((node) => node.scrollTop)).toBe(0);
+
+		await dockItem.click();
+		await expect(page).toHaveURL(new RegExp(`/app/rooms/${targetRoom.roomId}$`));
+		await waitForRoomLoadingToFinish(page);
+	});
+
 	test('refreshes sidebar attention signals for inactive public rooms while another timeline is open', async ({ page }) => {
 		const manifest = readSeedManifest();
 		const targetRoom = manifest.rooms.publicEmpty;

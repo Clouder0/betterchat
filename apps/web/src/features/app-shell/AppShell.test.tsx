@@ -445,4 +445,219 @@ describe('AppShell component contracts', () => {
 		await waitFor(() => expect(sidebar.getAttribute('data-collapsed')).toBe('true'));
 		await waitFor(() => expect(window.localStorage.getItem('betterchat.sidebar-collapsed.v1')).toBe(JSON.stringify(true)));
 	});
+
+	it('renders the attention dock outside the scrollable sidebar body and excludes the active room', async () => {
+		dom = installTestDom();
+		roomListState = {
+			rooms: [
+				{
+					attention: {
+						badgeCount: 1,
+						level: 'mention',
+					},
+					favorite: false,
+					id: 'room-ops',
+					kind: 'channel',
+					subtitle: 'Operations room',
+					title: 'Ops room',
+					visibility: 'visible',
+				},
+				{
+					attention: {
+						badgeCount: 3,
+						level: 'unread',
+					},
+					favorite: false,
+					id: 'dm-alice',
+					kind: 'dm',
+					subtitle: '@alice',
+					title: 'Alice Example',
+					visibility: 'visible',
+				},
+				{
+					attention: {
+						level: 'none',
+					},
+					favorite: false,
+					id: 'room-quiet',
+					kind: 'channel',
+					subtitle: 'Quiet room',
+					title: 'Quiet room',
+					visibility: 'visible',
+				},
+			],
+			version: 'room-list-v2',
+		};
+
+		const { container } = renderWithAppProviders(<AppShell roomId='room-ops' />);
+
+		await waitFor(() => expect(getByTestId(container, 'sidebar-attention-dock')).toBeTruthy());
+
+		const dock = getByTestId(container, 'sidebar-attention-dock');
+		const sidebarBody = getByTestId(container, 'sidebar-body');
+
+		expect(sidebarBody.contains(dock)).toBe(false);
+		expect(container.querySelector('[data-testid="sidebar-attention-dock-item-room-ops"]')).toBeNull();
+		expect(getByTestId(container, 'sidebar-attention-dock-item-dm-alice')).toBeTruthy();
+	});
+
+	it('opens a room when the attention dock item is clicked', async () => {
+		dom = installTestDom();
+		roomListState = {
+			rooms: [
+				{
+					attention: {
+						level: 'none',
+					},
+					favorite: false,
+					id: 'room-ops',
+					kind: 'channel',
+					subtitle: 'Operations room',
+					title: 'Ops room',
+					visibility: 'visible',
+				},
+				{
+					attention: {
+						badgeCount: 1,
+						level: 'mention',
+					},
+					favorite: false,
+					id: 'dm-alice',
+					kind: 'dm',
+					subtitle: '@alice',
+					title: 'Alice Example',
+					visibility: 'visible',
+				},
+			],
+			version: 'room-list-v2',
+		};
+
+		const { container } = renderWithAppProviders(<AppShell roomId='room-ops' />);
+
+		await waitFor(() => expect(getByTestId(container, 'sidebar-attention-dock-item-dm-alice')).toBeTruthy());
+		mockNavigate.mockClear();
+
+		await act(async () => {
+			fireEvent.click(getByTestId(container, 'sidebar-attention-dock-item-dm-alice'));
+		});
+
+		await waitFor(() =>
+			expect(mockNavigate).toHaveBeenCalledWith({
+				params: {
+					roomId: 'dm-alice',
+				},
+				to: '/app/rooms/$roomId',
+			}),
+		);
+	});
+
+	it('keeps sidebar scroll stable when inactive room attention changes without navigation intent', async () => {
+		dom = installTestDom();
+		roomListState = {
+			rooms: [
+				{
+					attention: {
+						level: 'none',
+					},
+					favorite: false,
+					id: 'room-ops',
+					kind: 'channel',
+					subtitle: 'Operations room',
+					title: 'Ops room',
+					visibility: 'visible',
+				},
+				{
+					attention: {
+						level: 'none',
+					},
+					favorite: false,
+					id: 'room-quiet',
+					kind: 'channel',
+					subtitle: 'Quiet room',
+					title: 'Quiet room',
+					visibility: 'visible',
+				},
+			],
+			version: 'room-list-v1',
+		};
+
+		const { container, queryClient } = renderWithAppProviders(<AppShell roomId='room-ops' />);
+		await waitFor(() => expect(getByTestId(container, 'sidebar-room-room-ops')).toBeTruthy());
+
+		const sidebarBody = getByTestId(container, 'sidebar-body');
+		const activeRoomButton = getByTestId(container, 'sidebar-room-room-ops');
+		const inactiveRoomButton = getByTestId(container, 'sidebar-room-room-quiet');
+
+		setElementBox(sidebarBody, {
+			clientHeight: 120,
+			height: 120,
+			scrollTop: 0,
+			top: 0,
+			width: 260,
+		});
+		setElementBox(activeRoomButton, {
+			height: 40,
+			offsetTop: 80,
+			top: 80,
+			width: 240,
+		});
+		setElementBox(inactiveRoomButton, {
+			height: 40,
+			offsetTop: 16,
+			top: 16,
+			width: 240,
+		});
+
+		roomListState = {
+			rooms: [
+				{
+					attention: {
+						level: 'none',
+					},
+					favorite: false,
+					id: 'room-ops',
+					kind: 'channel',
+					subtitle: 'Operations room',
+					title: 'Ops room',
+					visibility: 'visible',
+				},
+				{
+					attention: {
+						badgeCount: 1,
+						level: 'unread',
+					},
+					favorite: false,
+					id: 'room-quiet',
+					kind: 'channel',
+					subtitle: 'Quiet room',
+					title: 'Quiet room',
+					visibility: 'visible',
+				},
+			],
+			version: 'room-list-v2',
+		};
+
+		setElementBox(sidebarBody, {
+			clientHeight: 90,
+			height: 90,
+			scrollTop: 0,
+			top: 0,
+			width: 260,
+		});
+		setElementBox(activeRoomButton, {
+			height: 40,
+			offsetTop: 80,
+			top: 80,
+			width: 240,
+		});
+
+		await act(async () => {
+			await queryClient.invalidateQueries({
+				queryKey: ['room-list'],
+			});
+		});
+
+		await waitFor(() => expect(getByTestId(container, 'sidebar-attention-dock-item-room-quiet')).toBeTruthy());
+		expect(sidebarBody.scrollTop).toBe(0);
+	});
 });

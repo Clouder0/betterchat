@@ -79,6 +79,8 @@ import {
 	type SidebarNotificationMessageCandidate,
 	shouldNotifyForSidebarEntry,
 } from '../sidebar/sidebarBrowserNotifications';
+import { SidebarAttentionDock } from '../sidebar/SidebarAttentionDock';
+import { buildSidebarAttentionDock } from '../sidebar/sidebarAttentionDockModel';
 import { buildSidebarGroups, getDefaultRoomId } from '../sidebar/sidebarModel';
 import { deriveSidebarOrderingState, type SidebarOrderingState } from '../sidebar/sidebarOrdering';
 import { resolveSidebarSecondaryMeta } from '../sidebar/sidebarPresence';
@@ -97,7 +99,7 @@ import {
 import { resolveSidebarSearchKeyAction } from './sidebarSearchKeyAction';
 import { shouldIgnorePointerRegionMove, shouldRefreshTimelinePointerEpoch } from './pointerRegionOwnership';
 import { canApplyPendingComposerFocus } from './postNavigationFocus';
-import { resolveSidebarScrollBehavior } from './sidebarRoomScroll';
+import { revealSidebarRoomInContainer } from './sidebarActiveRoomReveal';
 import {
 	hasOlderHistory,
 	mergeOlderHistoryPage,
@@ -479,6 +481,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const composerSectionRef = useRef<HTMLDivElement>(null);
 	const composerBarRef = useRef<ComposerBarHandle>(null);
 	const searchInputRef = useRef<HTMLInputElement>(null);
+	const sidebarBodyRef = useRef<HTMLDivElement>(null);
 	const favoriteToggleRef = useRef<HTMLButtonElement>(null);
 	const roomAlertToggleRef = useRef<HTMLButtonElement>(null);
 	const roomInfoTriggerRef = useRef<HTMLButtonElement>(null);
@@ -571,8 +574,10 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const [forwardToast, setForwardToast] = useState<ForwardToastState | null>(null);
 	const [errorToast, setErrorToast] = useState<ToastOptions | null>(null);
 	const errorToastTimerRef = useRef<number | null>(null);
+	const previousEffectiveSidebarCollapsedRef = useRef<boolean | null>(null);
 	const [pendingForwardJumpRoomId, setPendingForwardJumpRoomId] = useState<string | null>(null);
 	const [pendingDirectConversationFocusRoomId, setPendingDirectConversationFocusRoomId] = useState<string | null>(null);
+	const [pendingSidebarRevealRoomId, setPendingSidebarRevealRoomId] = useState<string | null>(roomId ?? null);
 	const [roomPendingSendCounts, setRoomPendingSendCounts] = useState<Record<string, number>>({});
 	const [realtimeStatus, setRealtimeStatus] = useState<BetterChatRealtimeStatus>({
 		kind: 'connecting',
@@ -918,6 +923,13 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		() => buildSidebarGroups(sidebarEntries, searchValue, roomAlertPreferences, sidebarOrderingState, roomId),
 		[roomAlertPreferences, roomId, searchValue, sidebarEntries, sidebarOrderingState],
 	);
+	const sidebarAttentionDock = useMemo(
+		() =>
+			buildSidebarAttentionDock(sidebarEntries, {
+				activeRoomId: roomId,
+			}),
+		[roomId, sidebarEntries],
+	);
 	const realtimeWatchState = useMemo(() => {
 		const watchedRooms: WatchedRoomState[] = [];
 
@@ -1006,17 +1018,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 
 			return visibleSidebarRoomIds[0] ?? null;
 		});
-	}, [roomId, visibleSidebarRoomIds]);
-
-	useEffect(() => {
-		if (!roomId) return;
-
-		const roomButton = sidebarRoomRefs.current.get(roomId);
-		if (!roomButton) return;
-
-		roomButton.scrollIntoView(resolveSidebarScrollBehavior({
-			motionDisabled: isDocumentMotionDisabled(),
-		}));
 	}, [roomId, visibleSidebarRoomIds]);
 
 	const setSidebarRoomRef = useCallback(
@@ -1209,6 +1210,39 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		viewportWidth,
 		workspaceRef,
 	});
+
+	useEffect(() => {
+		setPendingSidebarRevealRoomId(roomId ?? null);
+	}, [roomId]);
+
+	useEffect(() => {
+		const previousCollapsed = previousEffectiveSidebarCollapsedRef.current;
+		previousEffectiveSidebarCollapsedRef.current = effectiveSidebarCollapsed;
+		if (previousCollapsed === null || !previousCollapsed || effectiveSidebarCollapsed || !roomId) {
+			return;
+		}
+
+		setPendingSidebarRevealRoomId(roomId);
+	}, [effectiveSidebarCollapsed, roomId]);
+
+	useLayoutEffect(() => {
+		if (!pendingSidebarRevealRoomId || effectiveSidebarCollapsed) {
+			return;
+		}
+
+		const sidebarBody = sidebarBodyRef.current;
+		const roomButton = sidebarRoomRefs.current.get(pendingSidebarRevealRoomId);
+		if (!sidebarBody || !roomButton) {
+			return;
+		}
+
+		revealSidebarRoomInContainer({
+			container: sidebarBody,
+			motionDisabled: isDocumentMotionDisabled(),
+			roomButton,
+		});
+		setPendingSidebarRevealRoomId((currentRoomId) => (currentRoomId === pendingSidebarRevealRoomId ? null : currentRoomId));
+	}, [effectiveSidebarCollapsed, pendingSidebarRevealRoomId, visibleSidebarRoomIds]);
 
 	useEffect(() => {
 		const handlePointerRegion = (event: PointerEvent) => {
@@ -3454,10 +3488,19 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 						</label>
 					</div>
 
+					{sidebarAttentionDock.entries.length > 0 ? (
+						<SidebarAttentionDock
+							entries={sidebarAttentionDock.entries}
+							onOpenRoom={openRoom}
+							overflowCount={sidebarAttentionDock.overflowCount}
+						/>
+					) : null}
+
 					<div
 						className={styles.sidebarBody}
 						data-navigation-mode={sidebarInteractionMode}
 						data-testid='sidebar-body'
+						ref={sidebarBodyRef}
 						onPointerDownCapture={(event) => {
 							if (event.pointerType === 'mouse' || event.pointerType === 'pen') {
 								markSidebarPointerInteraction();
