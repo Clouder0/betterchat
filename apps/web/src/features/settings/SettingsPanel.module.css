@@ -166,6 +166,20 @@
 	gap: 0.24rem;
 }
 
+.preferenceField {
+	display: flex;
+	flex-direction: column;
+	gap: 0.46rem;
+}
+
+.preferenceLegend {
+	margin: 0;
+	color: var(--text-soft);
+	font-size: 0.78rem;
+	font-weight: 560;
+	line-height: 1.35;
+}
+
 .sectionLabel {
 	font-family: var(--font-label);
 	font-size: 0.72rem;
@@ -233,7 +247,7 @@
 		background 140ms ease;
 }
 
-.optionCard:hover {
+.optionCard:hover:not(:disabled) {
 	border-color: color-mix(in srgb, var(--border-strong) 80%, transparent);
 	background: color-mix(in srgb, var(--surface-panel-muted) 86%, var(--surface-field));
 }
@@ -241,6 +255,11 @@
 .optionCard[data-active='true'] {
 	border-color: color-mix(in srgb, var(--accent) 18%, var(--border-strong));
 	background: color-mix(in srgb, var(--surface-panel-muted) 94%, var(--surface-field));
+}
+
+.optionCard:disabled {
+	opacity: 0.58;
+	cursor: default;
 }
 
 .optionCopy {

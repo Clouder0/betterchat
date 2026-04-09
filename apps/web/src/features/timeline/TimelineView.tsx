@@ -30,6 +30,7 @@ import { resolvePreferredTimelineFocusTarget } from './timelineFocusTarget';
 import {
 	findAppendedMessageIds,
 	findMessageIdTransfers,
+	messageHasVisualMedia,
 	resolveMeasuredMessageCollapsible,
 	resolveMessageExpandedState,
 	resolveTransferredAppendedMessageIds,
@@ -44,6 +45,7 @@ import {
 	normalizePendingContentResizeAdjustment,
 	resolveHistoryPrependRestoreScrollTop,
 	resolveViewportSnapshotScrollTop,
+	shouldDropPendingContentResizeAdjustmentOnManualScroll,
 	type ActiveHistoryPrependRestore,
 	type PendingContentResizeAdjustment,
 } from './timelineViewportRestoration';
@@ -148,6 +150,10 @@ type MessageContextMenuDividerItem = {
 type MessageContextMenuItem = MessageContextMenuActionItem | MessageContextMenuDividerItem;
 type TimelineFocusRequest = {
 	strategy: 'preferred' | 'bottom-visible' | 'pointer-anchor' | 'first-message' | 'last-message' | 'unread-or-latest';
+	token: number;
+};
+type TimelineExpansionRequest = {
+	messageId: string;
 	token: number;
 };
 type FocusedMessageIdUpdater = string | null | ((currentMessageId: string | null) => string | null);
@@ -584,6 +590,7 @@ export const TimelineView = ({
 	authorQuickPanelRequestedUserId = null,
 	authorQuickPanelSubmitting = false,
 	currentUser = null,
+	expansionRequest = null,
 	failedMessageActions = {},
 	focusRequest = { strategy: 'preferred', token: 0 },
 	forceScrollToBottomToken = 0,
@@ -622,6 +629,7 @@ export const TimelineView = ({
 	authorQuickPanelRequestedUserId?: string | null;
 	authorQuickPanelSubmitting?: boolean;
 	currentUser?: Pick<SessionUser, 'displayName' | 'id' | 'username'> | null;
+	expansionRequest?: TimelineExpansionRequest | null;
 	failedMessageActions?: Record<string, { errorMessage?: string }>;
 		focusRequest?: TimelineFocusRequest;
 		forceScrollToBottomToken?: number;
@@ -711,6 +719,13 @@ export const TimelineView = ({
 	const previousRoomIdRef = useRef<string | null>(null);
 	const previousMessageCountRef = useRef(0);
 	const previousForceScrollToBottomTokenRef = useRef(forceScrollToBottomToken);
+	const handledExpansionRequestRef = useRef<{
+		targetMessageIds: Set<string>;
+		token: number;
+	}>({
+		targetMessageIds: new Set<string>(),
+		token: expansionRequest?.token ?? 0,
+	});
 	const previousRenderedRoomIdRef = useRef<string | null>(null);
 	const previousRenderedMessageIdsRef = useRef<string[]>([]);
 	const previousRenderedMessagesRef = useRef<TimelineMessage[]>([]);
@@ -1467,6 +1482,61 @@ export const TimelineView = ({
 		},
 		[timeline.roomId],
 	);
+
+	useEffect(() => {
+		const nextExpansionRequestToken = expansionRequest?.token ?? 0;
+		if (nextExpansionRequestToken !== handledExpansionRequestRef.current.token) {
+			handledExpansionRequestRef.current = {
+				targetMessageIds: new Set<string>(),
+				token: nextExpansionRequestToken,
+			};
+		}
+
+		if (!expansionRequest) {
+			return;
+		}
+
+		const message =
+			timeline.messages.find((entry) => entry.id === expansionRequest.messageId) ??
+			timeline.messages.find((entry) => entry.submissionId === expansionRequest.messageId);
+		if (!message) {
+			return;
+		}
+
+		if (handledExpansionRequestRef.current.targetMessageIds.has(message.id)) {
+			return;
+		}
+
+		const currentExpandedMessages =
+			loadedExpansionRoomIdRef.current === timeline.roomId ? expandedMessagesRef.current : loadRoomMessageExpansion(timeline.roomId);
+		const collapsible = resolveMeasuredMessageCollapsible(messageContentHeights[message.id], message);
+		const currentExpanded = resolveMessageExpandedState({
+			appendedExpandedByDefault: appendedMessageExpansionDefaults[message.id],
+			collapsible,
+			persistedExpanded: currentExpandedMessages[message.id],
+		});
+		handledExpansionRequestRef.current.targetMessageIds.add(message.id);
+		if (!collapsible || currentExpanded) {
+			return;
+		}
+
+		commitExpandedMessages(
+			{
+				...currentExpandedMessages,
+				[message.id]: true,
+			},
+			{
+				[message.id]: true,
+			},
+		);
+	}, [
+		appendedMessageExpansionDefaults,
+		commitExpandedMessages,
+		expansionRequest,
+		messageContentHeights,
+		timeline.messages,
+		timeline.roomId,
+	]);
 
 	const toggleMessageExpanded = useCallback(
 		(messageId: string) => {
@@ -2407,6 +2477,7 @@ export const TimelineView = ({
 			return;
 		}
 
+		clearBottomReflowFollow();
 		const viewportSnapshot = captureViewportSnapshot();
 		const targetRoomId = timeline.roomId;
 		olderHistoryLoadInFlightRef.current = true;
@@ -2445,7 +2516,7 @@ export const TimelineView = ({
 					olderHistoryLoadInFlightRef.current = false;
 				}
 			});
-	}, [captureViewportSnapshot, currentMessageIds.length, onLoadOlderHistory, scheduleContentResizeAdjustment, timeline.roomId]);
+	}, [captureViewportSnapshot, clearBottomReflowFollow, currentMessageIds.length, onLoadOlderHistory, scheduleContentResizeAdjustment, timeline.roomId]);
 
 	const maybePrefetchOlderHistory = useCallback((previousScrollTop: number, currentScrollTop: number) => {
 		const container = messageStreamRef.current;
@@ -3229,6 +3300,32 @@ export const TimelineView = ({
 			}, {}),
 		[appendedMessageExpansionDefaults, messageContentHeights, timeline.messages, transferredExpandedMessages],
 	);
+	useEffect(() => {
+		const currentExpandedMessages =
+			loadedExpansionRoomIdRef.current === timeline.roomId ? expandedMessagesRef.current : loadRoomMessageExpansion(timeline.roomId);
+		let nextExpandedMessages: Record<string, boolean> | null = null;
+		const persistEntries: Record<string, boolean> = {};
+
+		for (const message of timeline.messages) {
+			if (!localOutgoingMessageIds.has(message.id) || !messageHasVisualMedia(message) || !messageMetadata[message.id]?.expanded) {
+				continue;
+			}
+
+			if (currentExpandedMessages[message.id] === true || nextExpandedMessages?.[message.id] === true) {
+				continue;
+			}
+
+			nextExpandedMessages ??= { ...currentExpandedMessages };
+			nextExpandedMessages[message.id] = true;
+			persistEntries[message.id] = true;
+		}
+
+		if (!nextExpandedMessages) {
+			return;
+		}
+
+		commitExpandedMessages(nextExpandedMessages, persistEntries);
+	}, [commitExpandedMessages, localOutgoingMessageIds, messageMetadata, timeline.messages, timeline.roomId]);
 	const messageMentionStates = useMemo(
 		() =>
 			timeline.messages.reduce<Record<string, boolean>>((mentions, message) => {
@@ -3994,6 +4091,7 @@ export const TimelineView = ({
 
 		const handleViewportChange = () => {
 			const previousScrollTop = lastViewportTopRef.current;
+			const previousBottomGap = lastKnownBottomGapRef.current;
 			const currentScrollTop = container.scrollTop;
 			if (
 				shouldCancelTimelineScrollAnimation({
@@ -4011,6 +4109,7 @@ export const TimelineView = ({
 			if (
 				shouldCancelBottomFollowOnViewportChange({
 					bottomGap: currentBottomGap,
+					previousBottomGap,
 					programmaticScrollActive: programmaticViewportScrollRef.current,
 					scrollTop: currentScrollTop,
 					previousScrollTop,
@@ -4018,6 +4117,18 @@ export const TimelineView = ({
 			) {
 				bottomReflowFollowUntilRef.current = 0;
 				bottomReflowFollowRoomIdRef.current = null;
+			}
+
+			if (
+				!programmaticViewportScrollRef.current &&
+				scrollAnimationFrameRef.current === null &&
+				shouldDropPendingContentResizeAdjustmentOnManualScroll(pendingContentResizeAdjustmentRef.current)
+			) {
+				pendingContentResizeAdjustmentRef.current = null;
+				if (contentResizeAdjustmentFrameRef.current !== null) {
+					window.cancelAnimationFrame(contentResizeAdjustmentFrameRef.current);
+					contentResizeAdjustmentFrameRef.current = null;
+				}
 			}
 
 			lastViewportTopRef.current = currentScrollTop;

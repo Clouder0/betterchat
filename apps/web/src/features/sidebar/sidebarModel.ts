@@ -1,13 +1,14 @@
 import type { RoomAttentionLevel, RoomSummary } from '@/lib/chatModels';
 
-import type { RoomAlertPreferenceStore } from './roomAlertPreferences';
+import type { RoomNotificationDefaults, RoomNotificationPreferenceStore } from '@/features/notifications/notificationPreferences';
 import type { SidebarOrderingState } from './sidebarOrdering';
-import { resolveRoomAlertPreference } from './roomAlertPreferences';
+import { DEFAULT_ROOM_NOTIFICATION_DEFAULTS, resolveRoomNotificationPreference } from '@/features/notifications/notificationPreferences';
 import {
 	resolveSidebarActivityTimestamp,
 	resolveSidebarAttentionTimestamp,
 	resolveSidebarEffectiveAttentionLevel,
 } from './sidebarOrdering';
+import { resolveRoomNotificationPreferencePriority } from '@/features/notifications/notificationPolicy';
 
 export type SidebarGroupKey = 'favorites' | 'rooms' | 'dms';
 
@@ -30,13 +31,23 @@ const collator = new Intl.Collator('zh-Hans-CN', {
 
 const normalizeSearchText = (value: string) => value.toLocaleLowerCase('zh-CN').replace(/\s+/g, '');
 
-const getAlertPriority = (entry: RoomSummary, alertPreferences: RoomAlertPreferenceStore) =>
-	resolveRoomAlertPreference({
-		preferences: alertPreferences,
-		roomId: entry.id,
-	}) === 'subscribed'
-		? 1
-		: 0;
+const getNotificationPriority = ({
+	defaults,
+	entry,
+	preferences,
+}: {
+	defaults: RoomNotificationDefaults;
+	entry: RoomSummary;
+	preferences: RoomNotificationPreferenceStore;
+}) =>
+	resolveRoomNotificationPreferencePriority(
+		resolveRoomNotificationPreference({
+			defaults,
+			preferences,
+			roomId: entry.id,
+			roomKind: entry.kind,
+		}),
+	);
 const attentionPriority: Record<RoomAttentionLevel, number> = {
 	mention: 3,
 	unread: 2,
@@ -56,20 +67,24 @@ const getAttentionPriority = ({
 
 const compareEntries = ({
 	activeRoomId,
-	alertPreferences,
+	notificationDefaults,
+	notificationPreferences,
 	left,
 	orderingState,
 	right,
 }: {
 	activeRoomId?: string | null;
-	alertPreferences: RoomAlertPreferenceStore;
+	notificationDefaults: RoomNotificationDefaults;
+	notificationPreferences: RoomNotificationPreferenceStore;
 	left: RoomSummary;
 	orderingState?: SidebarOrderingState;
 	right: RoomSummary;
 }) => {
-	const alertDelta = getAlertPriority(right, alertPreferences) - getAlertPriority(left, alertPreferences);
-	if (alertDelta !== 0) {
-		return alertDelta;
+	const preferenceDelta =
+		getNotificationPriority({ defaults: notificationDefaults, entry: right, preferences: notificationPreferences }) -
+		getNotificationPriority({ defaults: notificationDefaults, entry: left, preferences: notificationPreferences });
+	if (preferenceDelta !== 0) {
+		return preferenceDelta;
 	}
 
 	const attentionDelta =
@@ -149,9 +164,10 @@ const toGroupKey = (entry: RoomSummary): SidebarGroupKey => {
 export const buildSidebarGroups = (
 	entries: RoomSummary[],
 	query = '',
-	alertPreferences: RoomAlertPreferenceStore = {},
+	notificationPreferences: RoomNotificationPreferenceStore = {},
 	orderingState: SidebarOrderingState = {},
 	activeRoomId?: string | null,
+	notificationDefaults: RoomNotificationDefaults = DEFAULT_ROOM_NOTIFICATION_DEFAULTS,
 ): SidebarGroup[] => {
 	const filteredEntries = filterEntries(entries, query);
 	const groupedEntries = new Map<SidebarGroupKey, RoomSummary[]>();
@@ -170,7 +186,8 @@ export const buildSidebarGroups = (
 			entries: [...(groupedEntries.get(key) ?? [])].sort((left, right) =>
 				compareEntries({
 					activeRoomId,
-					alertPreferences,
+					notificationDefaults,
+					notificationPreferences,
 					left,
 					orderingState,
 					right,
@@ -180,7 +197,11 @@ export const buildSidebarGroups = (
 		.filter((group) => group.entries.length > 0);
 };
 
-export const getDefaultRoomId = (entries: RoomSummary[], alertPreferences: RoomAlertPreferenceStore = {}) => {
-	const sortedEntries = buildSidebarGroups(entries, '', alertPreferences).flatMap((group) => group.entries);
+export const getDefaultRoomId = (
+	entries: RoomSummary[],
+	notificationPreferences: RoomNotificationPreferenceStore = {},
+	notificationDefaults: RoomNotificationDefaults = DEFAULT_ROOM_NOTIFICATION_DEFAULTS,
+) => {
+	const sortedEntries = buildSidebarGroups(entries, '', notificationPreferences, {}, undefined, notificationDefaults).flatMap((group) => group.entries);
 	return sortedEntries.find((entry) => entry.visibility === 'visible')?.id ?? sortedEntries[0]?.id;
 };

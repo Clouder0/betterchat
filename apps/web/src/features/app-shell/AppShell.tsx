@@ -29,6 +29,28 @@ import { buildForwardedMessageMarkdown, createReplyPreviewFromMessage } from '@/
 import { SettingsPanel } from '@/features/settings/SettingsPanel';
 import { TimelineView } from '@/features/timeline/TimelineView';
 import {
+	browserNotificationBackgroundSupported,
+	loadBrowserNotificationDelivery,
+	loadRoomNotificationDefaults,
+	loadRoomNotificationPreferences as loadRoomAlertPreferences,
+	resolveBrowserNotificationPermissionState,
+	resolveDefaultRoomNotificationPreference,
+	resolveEffectiveBrowserNotificationDelivery,
+	resolveRoomNotificationPreference as resolveRoomAlertPreference,
+	roomNotificationPreferenceUsesDefault,
+	saveBrowserNotificationDelivery,
+	saveRoomNotificationDefaults,
+	saveRoomNotificationPreferences as saveRoomAlertPreferences,
+	updateRoomNotificationPreferences as updateRoomAlertPreferences,
+	type BrowserNotificationDelivery,
+	type BrowserNotificationPermissionState,
+	type RoomNotificationDefaults,
+	type RoomNotificationPreference as RoomAlertPreference,
+} from '@/features/notifications/notificationPreferences';
+import {
+	isBrowserNotificationDeliveryEnabled,
+} from '@/features/notifications/notificationPolicy';
+import {
 	mergeMessageContextIntoTimeline,
 	mergeTimelineMessagesPreferIncoming,
 } from '@/features/timeline/timelineContext';
@@ -63,19 +85,11 @@ import {
 	updateFavoriteOverrides,
 } from '../sidebar/favoriteOverrides';
 import {
-	DEFAULT_ROOM_ALERT_PREFERENCE,
-	loadRoomAlertPreferences,
-	resolveRoomAlertPreference,
-	saveRoomAlertPreferences,
-	updateRoomAlertPreferences,
-	type RoomAlertPreference,
-} from '../sidebar/roomAlertPreferences';
-import {
-	didSidebarEntryActivityAdvance,
 	resolveSidebarBrowserNotificationBody,
 	resolveSidebarBrowserNotificationMessageBody,
 	resolveSidebarNotificationFetchCount,
 	resolveSidebarNotificationMessages,
+	shouldFallbackNotifyForSidebarEntry,
 	type SidebarNotificationMessageCandidate,
 	shouldNotifyForSidebarEntry,
 } from '../sidebar/sidebarBrowserNotifications';
@@ -103,6 +117,8 @@ import { revealSidebarRoomInContainer } from './sidebarActiveRoomReveal';
 import {
 	hasOlderHistory,
 	mergeOlderHistoryPage,
+	olderHistoryStatesEqual,
+	resolveRetainedOlderHistory,
 	resolveOlderHistoryLoadCursor,
 	resolveOlderHistoryNextCursor,
 	type OlderHistoryState,
@@ -122,8 +138,13 @@ const roomKindGlyph: Record<'channel' | 'group' | 'dm', string> = {
 	dm: '私',
 };
 const roomAlertPreferenceLabel: Record<RoomAlertPreference, string> = {
-	subscribed: '订阅',
-	normal: '普通',
+	all: '所有消息',
+	personal: '仅个人相关',
+	mute: '静音',
+};
+const browserNotificationDeliveryLabel: Record<Exclude<BrowserNotificationDelivery, 'background'>, string> = {
+	foreground: '仅在 BetterChat 打开时',
+	off: '已关闭',
 };
 const getRoomUnreadCount = (room: Pick<RoomSummary, 'attention'>) => room.attention.badgeCount ?? 0;
 const isRoomMentioned = (room: Pick<RoomSummary, 'attention'>) => room.attention.level === 'mention';
@@ -437,11 +458,17 @@ const RoomLoadingSkeleton = () => (
 );
 
 const RoomAlertPreferenceGlyph = ({ preference }: { preference: RoomAlertPreference }) =>
-	preference === 'normal' ? (
+	preference === 'mute' ? (
 		<svg aria-hidden='true' viewBox='0 0 16 16'>
 			<path d='M8 2.3a3.4 3.4 0 0 1 3.4 3.4v1.28c0 .92.3 1.82.85 2.56l.65.88H3.1l.65-.88c.55-.74.85-1.64.85-2.56V5.7A3.4 3.4 0 0 1 8 2.3Z' />
 			<path d='M6.4 12.2a1.66 1.66 0 0 0 3.2 0' />
 			<path d='M3 3l10 10' />
+		</svg>
+	) : preference === 'personal' ? (
+		<svg aria-hidden='true' viewBox='0 0 16 16'>
+			<path d='M8 2.3a3.4 3.4 0 0 1 3.4 3.4v1.28c0 .92.3 1.82.85 2.56l.65.88H3.1l.65-.88c.55-.74.85-1.64.85-2.56V5.7A3.4 3.4 0 0 1 8 2.3Z' />
+			<path d='M6.4 12.2a1.66 1.66 0 0 0 3.2 0' />
+			<circle cx='11.85' cy='4.15' fill='currentColor' r='1.1' stroke='none' />
 		</svg>
 	) : (
 		<svg aria-hidden='true' viewBox='0 0 16 16'>
@@ -451,10 +478,16 @@ const RoomAlertPreferenceGlyph = ({ preference }: { preference: RoomAlertPrefere
 	);
 
 const RoomAlertToggleGlyph = ({ preference }: { preference: RoomAlertPreference }) =>
-	preference === 'subscribed' ? (
+	preference === 'all' ? (
 		<svg aria-hidden='true' viewBox='0 0 16 16'>
 			<path d='M8 2.2a3.35 3.35 0 0 1 3.35 3.35v1.34c0 .89.29 1.75.82 2.46l.68.91H3.15l.68-.91a4.08 4.08 0 0 0 .82-2.46V5.55A3.35 3.35 0 0 1 8 2.2Z' />
 			<path d='M6.38 12.15a1.7 1.7 0 0 0 3.24 0' />
+		</svg>
+	) : preference === 'personal' ? (
+		<svg aria-hidden='true' viewBox='0 0 16 16'>
+			<path d='M8 2.2a3.35 3.35 0 0 1 3.35 3.35v1.34c0 .89.29 1.75.82 2.46l.68.91H3.15l.68-.91a4.08 4.08 0 0 0 .82-2.46V5.55A3.35 3.35 0 0 1 8 2.2Z' />
+			<path d='M6.38 12.15a1.7 1.7 0 0 0 3.24 0' />
+			<circle cx='11.8' cy='4.1' fill='currentColor' r='1.08' stroke='none' />
 		</svg>
 	) : (
 		<svg aria-hidden='true' viewBox='0 0 16 16'>
@@ -463,6 +496,76 @@ const RoomAlertToggleGlyph = ({ preference }: { preference: RoomAlertPreference 
 			<path d='M3.1 3.1 12.9 12.9' />
 		</svg>
 	);
+
+const resolveRoomAlertDefaultLabel = ({
+	defaults,
+	roomKind,
+}: {
+	defaults: RoomNotificationDefaults;
+	roomKind: 'channel' | 'group' | 'dm';
+}) => roomAlertPreferenceLabel[resolveDefaultRoomNotificationPreference({ defaults, roomKind })];
+
+const resolveRoomAlertPreferenceDescription = ({
+	preference,
+	roomKind,
+}: {
+	preference: RoomAlertPreference;
+	roomKind: 'channel' | 'group' | 'dm';
+}) => {
+	if (preference === 'mute') {
+		return '该房间仍会保留未读标记，但不会进入注意力栏或浏览器通知。';
+	}
+
+	if (preference === 'all') {
+		return roomKind === 'dm' ? '来自该私信的每条新消息都允许打断你。' : '该房间的每条新消息都允许打断你。';
+	}
+
+	return roomKind === 'dm' ? '来自该私信的新消息会按个人相关提醒处理。' : '仅提及你的消息会在该房间触发打断式提醒。';
+};
+
+const resolveRoomAlertEffectSummary = ({
+	delivery,
+	permission,
+	preference,
+	roomKind,
+}: {
+	delivery: Exclude<BrowserNotificationDelivery, 'background'>;
+	permission: BrowserNotificationPermissionState;
+	preference: RoomAlertPreference;
+	roomKind: 'channel' | 'group' | 'dm';
+}) => {
+	if (preference === 'mute') {
+		return '效果：仅保留未读事实，不进入注意力栏，也不触发浏览器通知。';
+	}
+
+	if (permission === 'unsupported') {
+		return '效果：当前浏览器不支持 Notification API，房间规则仅影响注意力栏。';
+	}
+
+	if (permission === 'denied') {
+		return '效果：浏览器权限已阻止，房间规则会保留，但当前无法送达浏览器通知。';
+	}
+
+	if (delivery === 'off') {
+		return '效果：该房间仍会参与注意力栏判断，但此浏览器已关闭浏览器通知。';
+	}
+
+	if (permission === 'default') {
+		return '效果：浏览器尚未授权通知；房间规则会保留，授权后才会真正送达浏览器通知。';
+	}
+
+	if (preference === 'all') {
+		return roomKind === 'dm'
+			? `效果：来自该私信的新消息会${browserNotificationDeliveryLabel[delivery]}触发浏览器通知。`
+			: `效果：该房间的新消息会${browserNotificationDeliveryLabel[delivery]}触发浏览器通知。`;
+	}
+
+	return roomKind === 'dm'
+		? `效果：来自该私信的新消息会${browserNotificationDeliveryLabel[delivery]}触发浏览器通知。`
+		: `效果：仅提及你的消息会${browserNotificationDeliveryLabel[delivery]}触发浏览器通知。`;
+};
+
+type SessionLifecycleState = 'active' | 'closing' | 'logged-out';
 
 export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const { resolvedTheme, setThemePreference, themePreference } = useTheme();
@@ -484,6 +587,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const sidebarBodyRef = useRef<HTMLDivElement>(null);
 	const favoriteToggleRef = useRef<HTMLButtonElement>(null);
 	const roomAlertToggleRef = useRef<HTMLButtonElement>(null);
+	const roomAlertMenuRef = useRef<HTMLDivElement>(null);
 	const roomInfoTriggerRef = useRef<HTMLButtonElement>(null);
 	const sidebarRoomRefs = useRef(new Map<string, HTMLButtonElement>());
 	const sidebarHeldArrowNavigationRef = useRef(createHeldArrowNavigationState());
@@ -495,9 +599,16 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const roomOlderHistoryLoadingRef = useRef<Record<string, boolean>>({});
 	const roomOlderHistoryPrefetchPagesRef = useRef<Record<string, { cursor: string; page: RoomTimelineSnapshot }>>({});
 	const roomOlderHistoryPrefetchInFlightRef = useRef<Record<string, { cursor: string; promise: Promise<RoomTimelineSnapshot> }>>({});
+	const activeRoomLoadedWindowRef = useRef<{
+		messages: TimelineMessage[];
+		nextCursor?: string;
+		roomId: string;
+	} | null>(null);
 	const previousSidebarEntriesRef = useRef<Map<string, RoomSummary> | null>(null);
 	const roomNotificationLastMessageIdRef = useRef<Record<string, string>>({});
 	const roomNotificationInflightRef = useRef(new Set<string>());
+	const queuedFavoriteMutationRef = useRef<{ favorite: boolean; targetRoomId: string } | null>(null);
+	const browserNotificationEffectsMountedRef = useRef(true);
 	const previousSidebarOrderEntriesRef = useRef<RoomSummary[]>([]);
 	const previousSidebarOrderingStateRef = useRef<SidebarOrderingState>({});
 	const forwardToastTimerRef = useRef<number | null>(null);
@@ -527,6 +638,11 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const [searchValue, setSearchValue] = useState('');
 	const [favoriteOverrides, setFavoriteOverrides] = useState(loadFavoriteOverrides);
 	const [roomAlertPreferences, setRoomAlertPreferences] = useState(loadRoomAlertPreferences);
+	const [roomNotificationDefaults, setRoomNotificationDefaults] = useState<RoomNotificationDefaults>(loadRoomNotificationDefaults);
+	const [browserNotificationDelivery, setBrowserNotificationDelivery] = useState<BrowserNotificationDelivery>(loadBrowserNotificationDelivery);
+	const [browserNotificationPermission, setBrowserNotificationPermission] =
+		useState<BrowserNotificationPermissionState>(resolveBrowserNotificationPermissionState);
+	const [favoriteMutationInFlight, setFavoriteMutationInFlight] = useState(false);
 	const [motionPreference, setMotionPreference] = useState<MotionPreference>(getStoredMotionPreference);
 	const [composerEditorHeight, setComposerEditorHeight] = useState(loadComposerEditorHeightPreference);
 	const [conversationBodyHeight, setConversationBodyHeight] = useState(0);
@@ -566,8 +682,10 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	} | null>(null);
 	const [settingsOpen, setSettingsOpen] = useState(false);
 	const [roomInfoOpen, setRoomInfoOpen] = useState(false);
+	const [roomAlertMenuOpen, setRoomAlertMenuOpen] = useState(false);
 	const [activeTimelineAuthorUserId, setActiveTimelineAuthorUserId] = useState<string | null>(null);
 	const [timelineScrollToBottomToken, setTimelineScrollToBottomToken] = useState(0);
+	const [timelineExpansionRequest, setTimelineExpansionRequest] = useState<{ messageId: string; token: number } | null>(null);
 	const [focusedSidebarRoomId, setFocusedSidebarRoomId] = useState<string | null>(roomId ?? null);
 	const [sidebarInteractionMode, setSidebarInteractionMode] = useState<'keyboard' | 'pointer'>('pointer');
 	const [keyboardFocusRegion, setKeyboardFocusRegion] = useState<KeyboardFocusRegion>(null);
@@ -582,6 +700,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const [realtimeStatus, setRealtimeStatus] = useState<BetterChatRealtimeStatus>({
 		kind: 'connecting',
 	});
+	const [sessionLifecycle, setSessionLifecycle] = useState<SessionLifecycleState>('active');
 
 	const updateKeyboardFocusRegion = useCallback((nextRegionOrUpdater: KeyboardFocusRegionUpdater) => {
 		const nextRegion =
@@ -606,7 +725,13 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		return nextInteractionMode;
 	}, []);
 	const favoriteOverridesEnabled = betterChatApi.mode === 'fixture';
-	const apiModePollingEnabled = betterChatApi.mode === 'api';
+	const sessionActive = sessionLifecycle === 'active';
+	const apiModePollingEnabled = betterChatApi.mode === 'api' && sessionActive;
+	const browserNotificationBackgroundAvailable = useMemo(() => browserNotificationBackgroundSupported(), []);
+	const effectiveBrowserNotificationDelivery = useMemo(
+		() => resolveEffectiveBrowserNotificationDelivery({ delivery: browserNotificationDelivery }),
+		[browserNotificationDelivery],
+	);
 	const composerHeightBounds = useMemo(
 		() =>
 			resolveComposerEditorHeightBounds({
@@ -629,6 +754,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	);
 
 	const bootstrapQuery = useQuery({
+		enabled: sessionActive,
 		queryKey: betterChatQueryKeys.workspace,
 		queryFn: () => betterChatApi.workspace(),
 		retry: false,
@@ -651,6 +777,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	});
 
 	const sidebarQuery = useQuery({
+		enabled: sessionActive,
 		queryKey: betterChatQueryKeys.roomList,
 		queryFn: () => betterChatApi.roomList(),
 		retry: false,
@@ -661,7 +788,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const roomDetailsQuery = useQuery({
 		queryKey: roomId ? betterChatQueryKeys.room(roomId) : ['room', 'empty'],
 		queryFn: () => betterChatApi.room(roomId!),
-		enabled: Boolean(roomId),
+		enabled: sessionActive && Boolean(roomId),
 		retry: false,
 		refetchInterval: apiModePollingEnabled && roomId ? roomDetailsPollingInterval : false,
 		refetchIntervalInBackground: apiModePollingEnabled,
@@ -670,7 +797,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const roomTimelineQuery = useQuery({
 		queryKey: roomId ? betterChatQueryKeys.roomTimeline(roomId) : ['room-timeline', 'empty'],
 		queryFn: () => betterChatApi.roomTimeline(roomId!),
-		enabled: Boolean(roomId),
+		enabled: sessionActive && Boolean(roomId),
 		retry: false,
 		refetchInterval: apiModePollingEnabled && roomId ? roomTimelinePollingInterval : false,
 		refetchIntervalInBackground: apiModePollingEnabled,
@@ -678,7 +805,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const roomParticipantsQuery = useQuery({
 		queryKey: roomId ? betterChatQueryKeys.roomParticipants(roomId) : ['room-participants', 'empty'],
 		queryFn: () => loadAllRoomParticipants(roomId!),
-		enabled: Boolean(roomId),
+		enabled: sessionActive && Boolean(roomId),
 		retry: false,
 		staleTime: roomParticipantsStaleTimeMs,
 	});
@@ -687,7 +814,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			? betterChatQueryKeys.directConversation(activeTimelineAuthorUserId)
 			: ['direct-conversation', 'empty'],
 		queryFn: () => betterChatApi.directConversationLookup(activeTimelineAuthorUserId!),
-		enabled: Boolean(activeTimelineAuthorUserId),
+		enabled: sessionActive && Boolean(activeTimelineAuthorUserId),
 		retry: false,
 		staleTime: directConversationLookupStaleTimeMs,
 	});
@@ -716,6 +843,10 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		syncViewportWidth();
 		window.addEventListener('resize', syncViewportWidth);
 		return () => window.removeEventListener('resize', syncViewportWidth);
+	}, []);
+
+	useEffect(() => {
+		setBrowserNotificationPermission(resolveBrowserNotificationPermissionState());
 	}, []);
 
 	const applyComposerEditorHeightToSection = useCallback((nextHeight: number) => {
@@ -820,17 +951,33 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		};
 	}, [composerResizeDragging]);
 
-	const resetSessionAndReturnToLogin = useCallback(() => {
+	const closeRealtimeController = useCallback(() => {
 		realtimeControllerRef.current?.close();
 		realtimeControllerRef.current = null;
+		setRealtimeStatus({ kind: 'stopped' });
+	}, []);
+
+	const quiesceSession = useCallback(() => {
+		setSessionLifecycle((currentLifecycle) => (currentLifecycle === 'active' ? 'closing' : currentLifecycle));
+		closeRealtimeController();
+		void queryClient.cancelQueries();
+	}, [closeRealtimeController, queryClient]);
+
+	const resetSessionAndReturnToLogin = useCallback(() => {
+		setSessionLifecycle('logged-out');
+		closeRealtimeController();
 		queryClient.clear();
 		void navigate({
 			to: '/login',
 			replace: true,
 		});
-	}, [navigate, queryClient]);
+	}, [closeRealtimeController, navigate, queryClient]);
 
 	useEffect(() => {
+		if (!sessionActive) {
+			return;
+		}
+
 		const unauthorizedError = [bootstrapQuery.error, sidebarQuery.error].find(
 			(error) => isBetterChatApiError(error) && error.code === 'UNAUTHENTICATED',
 		);
@@ -840,15 +987,61 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		}
 
 		resetSessionAndReturnToLogin();
-	}, [bootstrapQuery.error, resetSessionAndReturnToLogin, sidebarQuery.error]);
+	}, [bootstrapQuery.error, resetSessionAndReturnToLogin, sessionActive, sidebarQuery.error]);
 
 	useEffect(() => {
 		setRoomInfoOpen(false);
+		setRoomAlertMenuOpen(false);
 		setComposerReplyTarget(null);
 		setComposerEditTarget(null);
 		setForwardDialogSource(null);
 		setDeleteDialogSource(null);
 	}, [roomId]);
+
+	useEffect(() => {
+		if (!roomAlertMenuOpen || typeof document === 'undefined') {
+			return;
+		}
+
+		const handlePointerDown = (event: MouseEvent | PointerEvent | TouchEvent) => {
+			const target = event.target;
+			if (!(target instanceof Node)) {
+				return;
+			}
+
+			if (roomAlertMenuRef.current?.contains(target) || roomAlertToggleRef.current?.contains(target)) {
+				return;
+			}
+
+			setRoomAlertMenuOpen(false);
+		};
+
+		const handleKeyDown = (event: KeyboardEvent) => {
+			if (event.key !== 'Escape') {
+				return;
+			}
+
+			setRoomAlertMenuOpen(false);
+			roomAlertToggleRef.current?.focus();
+		};
+
+		document.addEventListener('mousedown', handlePointerDown, true);
+		document.addEventListener('touchstart', handlePointerDown, true);
+		document.addEventListener('keydown', handleKeyDown);
+		return () => {
+			document.removeEventListener('mousedown', handlePointerDown, true);
+			document.removeEventListener('touchstart', handlePointerDown, true);
+			document.removeEventListener('keydown', handleKeyDown);
+		};
+	}, [roomAlertMenuOpen]);
+
+	useEffect(() => {
+		if (!roomInfoOpen && !settingsOpen) {
+			return;
+		}
+
+		setRoomAlertMenuOpen(false);
+	}, [roomInfoOpen, settingsOpen]);
 
 	useEffect(
 		() => () => {
@@ -897,6 +1090,14 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	}, [roomAlertPreferences]);
 
 	useEffect(() => {
+		saveRoomNotificationDefaults(roomNotificationDefaults);
+	}, [roomNotificationDefaults]);
+
+	useEffect(() => {
+		saveBrowserNotificationDelivery(browserNotificationDelivery);
+	}, [browserNotificationDelivery]);
+
+	useEffect(() => {
 		applyDocumentMotionPreference(motionPreference);
 	}, [motionPreference]);
 
@@ -920,15 +1121,17 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		previousSidebarOrderingStateRef.current = sidebarOrderingState;
 	}, [sidebarEntries, sidebarOrderingState]);
 	const sidebarGroups = useMemo(
-		() => buildSidebarGroups(sidebarEntries, searchValue, roomAlertPreferences, sidebarOrderingState, roomId),
-		[roomAlertPreferences, roomId, searchValue, sidebarEntries, sidebarOrderingState],
+		() => buildSidebarGroups(sidebarEntries, searchValue, roomAlertPreferences, sidebarOrderingState, roomId, roomNotificationDefaults),
+		[roomAlertPreferences, roomId, roomNotificationDefaults, searchValue, sidebarEntries, sidebarOrderingState],
 	);
 	const sidebarAttentionDock = useMemo(
 		() =>
 			buildSidebarAttentionDock(sidebarEntries, {
 				activeRoomId: roomId,
+				notificationDefaults: roomNotificationDefaults,
+				notificationPreferences: roomAlertPreferences,
 			}),
-		[roomId, sidebarEntries],
+		[roomAlertPreferences, roomId, roomNotificationDefaults, sidebarEntries],
 	);
 	const realtimeWatchState = useMemo(() => {
 		const watchedRooms: WatchedRoomState[] = [];
@@ -966,6 +1169,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		() => resolveUserPresence(roomDetailsQuery.data?.room.presence ?? activeEntry?.presence ?? activeEntrySecondaryMeta.presence?.tone),
 		[activeEntry?.presence, activeEntrySecondaryMeta.presence?.tone, roomDetailsQuery.data?.room.presence],
 	);
+	const currentUser = bootstrapQuery.data?.currentUser ?? null;
 	const currentUserId = bootstrapQuery.data?.currentUser.id ?? null;
 	const activeRoomHandle = useMemo(
 		() =>
@@ -994,7 +1198,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			return;
 		}
 
-		const defaultRoomId = getDefaultRoomId(sidebarEntries, roomAlertPreferences);
+		const defaultRoomId = getDefaultRoomId(sidebarEntries, roomAlertPreferences, roomNotificationDefaults);
 		if (!defaultRoomId) {
 			return;
 		}
@@ -1004,7 +1208,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			params: { roomId: defaultRoomId },
 			replace: true,
 		});
-	}, [navigate, roomAlertPreferences, roomId, sidebarEntries]);
+	}, [navigate, roomAlertPreferences, roomId, roomNotificationDefaults, sidebarEntries]);
 
 	useEffect(() => {
 		setFocusedSidebarRoomId((currentRoomId) => {
@@ -1626,6 +1830,12 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		},
 		[currentUserId],
 	);
+	useEffect(() => {
+		browserNotificationEffectsMountedRef.current = true;
+		return () => {
+			browserNotificationEffectsMountedRef.current = false;
+		};
+	}, []);
 
 	useEffect(() => {
 		const nextSidebarEntries = new Map(sidebarEntries.map((entry) => [entry.id, entry] as const));
@@ -1635,27 +1845,25 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		if (
 			previousSidebarEntries === null ||
 			typeof window === 'undefined' ||
-			!('Notification' in window) ||
-			window.Notification.permission !== 'granted'
+			!isBrowserNotificationDeliveryEnabled({
+				delivery: effectiveBrowserNotificationDelivery,
+				permission: browserNotificationPermission,
+			})
 		) {
 			return;
 		}
 
 		const { pageFocused, pageVisible } = resolveBrowserNotificationPageState();
-		let cancelled = false;
 
-		const notifyForEntry = async (entry: RoomSummary, previousEntry: RoomSummary | null) => {
+		const notifyForEntry = async (entry: RoomSummary, previousEntry: RoomSummary | null, preference: RoomAlertPreference) => {
 			if (roomNotificationInflightRef.current.has(entry.id)) {
 				return;
 			}
 
-			const fetchCount =
-				entry.id === roomId && (!pageFocused || !pageVisible) && didSidebarEntryActivityAdvance({ nextEntry: entry, previousEntry })
-					? 1
-					: resolveSidebarNotificationFetchCount({
-							nextEntry: entry,
-							previousEntry,
-					  });
+			const fetchCount = resolveSidebarNotificationFetchCount({
+				nextEntry: entry,
+				previousEntry,
+			});
 			if (fetchCount <= 0) {
 				return;
 			}
@@ -1667,23 +1875,19 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 					const timeline = await betterChatApi.roomTimeline(entry.id, {
 						limit: Math.max(fetchCount + 4, 10),
 					});
-					if (cancelled) {
+					if (!browserNotificationEffectsMountedRef.current) {
 						return;
 					}
 
 					const messagesToNotify = resolveSidebarNotificationMessages({
-						currentUserId,
+						currentUser,
+						entry,
 						lastNotifiedMessageId: roomNotificationLastMessageIdRef.current[entry.id] ?? null,
 						limit: fetchCount,
 						messages: timeline.messages,
+						preference,
 					});
 					if (messagesToNotify.length === 0) {
-						emitRoomNotification({
-							body: fallbackBody,
-							roomId: entry.id,
-							tag: `betterchat-room-${entry.id}-fallback-${Date.now()}`,
-							title: entry.title,
-						});
 						return;
 					}
 
@@ -1693,16 +1897,27 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 					});
 					return;
 				} catch {
-					if (cancelled) {
+					if (!browserNotificationEffectsMountedRef.current) {
 						return;
 					}
 
-					emitRoomNotification({
-						body: fallbackBody,
-						roomId: entry.id,
-						tag: `betterchat-room-${entry.id}-fallback-${Date.now()}`,
-						title: entry.title,
-					});
+					if (
+						shouldFallbackNotifyForSidebarEntry({
+							currentRoomId: roomId ?? null,
+							nextEntry: entry,
+							pageFocused,
+							pageVisible,
+							previousEntry,
+							preference,
+						})
+					) {
+						emitRoomNotification({
+							body: fallbackBody,
+							roomId: entry.id,
+							tag: `betterchat-room-${entry.id}-fallback-${Date.now()}`,
+							title: entry.title,
+						});
+					}
 				}
 			} finally {
 				roomNotificationInflightRef.current.delete(entry.id);
@@ -1710,31 +1925,38 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		};
 
 		for (const entry of sidebarEntries) {
-			const priority = resolveRoomAlertPreference({
+			const preference = resolveRoomAlertPreference({
+				defaults: roomNotificationDefaults,
 				preferences: roomAlertPreferences,
 				roomId: entry.id,
+				roomKind: entry.kind,
 			});
 			const previousEntry = previousSidebarEntries.get(entry.id) ?? null;
-			if (
-				!shouldNotifyForSidebarEntry({
-					currentRoomId: roomId ?? null,
-					nextEntry: entry,
-					pageFocused,
-					pageVisible,
-					previousEntry,
-					priority,
-				})
-			) {
+			const shouldNotify = shouldNotifyForSidebarEntry({
+				currentRoomId: roomId ?? null,
+				nextEntry: entry,
+				pageFocused,
+				pageVisible,
+				previousEntry,
+				preference,
+			});
+			if (!shouldNotify) {
 				continue;
 			}
 
-			void notifyForEntry(entry, previousEntry);
+			void notifyForEntry(entry, previousEntry, preference);
 		}
-
-		return () => {
-			cancelled = true;
-		};
-	}, [currentUserId, emitRoomMessageNotifications, emitRoomNotification, roomAlertPreferences, roomId, sidebarEntries]);
+	}, [
+		browserNotificationPermission,
+		currentUser,
+		effectiveBrowserNotificationDelivery,
+		emitRoomMessageNotifications,
+		emitRoomNotification,
+		roomAlertPreferences,
+		roomId,
+		roomNotificationDefaults,
+		sidebarEntries,
+	]);
 
 	const bootstrapError = bootstrapQuery.error && isBetterChatApiError(bootstrapQuery.error) ? bootstrapQuery.error : null;
 	const sidebarError = sidebarQuery.error && isBetterChatApiError(sidebarQuery.error) ? sidebarQuery.error : null;
@@ -1744,6 +1966,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const shellLoading = bootstrapQuery.isLoading || sidebarQuery.isLoading;
 	const roomLoading = Boolean(roomId) && (roomDetailsQuery.isLoading || roomTimelineQuery.isLoading);
 	const roomFavoriteServerValue = roomDetailsQuery.data?.room.favorite ?? activeEntryServer?.favorite ?? false;
+	const activeRoomKind = roomDetailsQuery.data?.room.kind ?? activeEntryServer?.kind ?? null;
 	const roomIsFavorite =
 		roomId && favoriteOverridesEnabled
 			? resolveFavoriteOverride({
@@ -1754,10 +1977,24 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			: roomFavoriteServerValue;
 	const activeRoomAlertPreference = roomId
 		? resolveRoomAlertPreference({
+				defaults: roomNotificationDefaults,
+				preferences: roomAlertPreferences,
+				roomId,
+				roomKind: activeRoomKind ?? 'channel',
+		  })
+		: roomNotificationDefaults.rooms;
+	const activeRoomAlertUsesDefault = roomId
+		? roomNotificationPreferenceUsesDefault({
 				preferences: roomAlertPreferences,
 				roomId,
 		  })
-		: DEFAULT_ROOM_ALERT_PREFERENCE;
+		: false;
+	const activeRoomDefaultAlertPreference = activeRoomKind
+		? resolveDefaultRoomNotificationPreference({
+				defaults: roomNotificationDefaults,
+				roomKind: activeRoomKind,
+		  })
+		: roomNotificationDefaults.rooms;
 	const workspaceCanSendMessages = bootstrapQuery.data?.capabilities.canSendMessages ?? false;
 	const roomCanSendMessages = roomDetailsQuery.data?.room.capabilities.canSendMessages ?? true;
 	const canSendMessages = workspaceCanSendMessages && roomCanSendMessages;
@@ -1765,7 +2002,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const showReadonlyComposerNotice = Boolean(roomId) && !canSendMessages;
 	const canUploadImages =
 		canSendMessages && (roomDetailsQuery.data?.room.capabilities.canUploadImages ?? bootstrapQuery.data?.capabilities.canUploadImages ?? false);
-	const currentUser = bootstrapQuery.data?.currentUser ?? null;
 	const displayName = currentUser?.displayName.trim() ?? '';
 	const username = currentUser?.username.trim() ?? '';
 	const hasDistinctHandle = Boolean(username) && normalizeIdentityValue(displayName) !== normalizeIdentityValue(username);
@@ -1775,9 +2011,26 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const activeRoomPendingSendCount = roomId ? roomPendingSendCounts[roomId] ?? 0 : 0;
 	const activeRoomLocalMessages = useMemo(() => (roomId ? roomLocalMessages[roomId] ?? [] : []), [roomId, roomLocalMessages]);
 	const activeRoomOlderHistory = useMemo(() => (roomId ? roomOlderHistory[roomId] : undefined), [roomId, roomOlderHistory]);
+	const activeRoomEffectiveOlderHistory = useMemo(() => {
+		if (!roomId || !roomTimelineQuery.data) {
+			return activeRoomOlderHistory;
+		}
+
+		const previousLoadedWindow = activeRoomLoadedWindowRef.current;
+		if (!previousLoadedWindow || previousLoadedWindow.roomId !== roomId) {
+			return activeRoomOlderHistory;
+		}
+
+		return resolveRetainedOlderHistory({
+			current: activeRoomOlderHistory,
+			nextBaseMessages: roomTimelineQuery.data.messages,
+			previousLoadedMessages: previousLoadedWindow.messages,
+			previousNextCursor: previousLoadedWindow.nextCursor,
+		});
+	}, [activeRoomOlderHistory, roomId, roomTimelineQuery.data]);
 	const activeRoomHasOlderHistory = hasOlderHistory({
 		baseNextCursor: roomTimelineQuery.data?.nextCursor,
-		olderHistory: activeRoomOlderHistory,
+		olderHistory: activeRoomEffectiveOlderHistory,
 	});
 	const activeRoomOlderHistoryLoading = roomId ? (roomOlderHistoryLoading[roomId] ?? false) : false;
 	const activeRoomBaseTimeline = useMemo(() => {
@@ -1785,16 +2038,19 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			return roomTimelineQuery.data;
 		}
 
-		const mergedMessages = mergeTimelineMessagesPreferIncoming(activeRoomOlderHistory?.messages ?? [], roomTimelineQuery.data.messages);
+		const mergedMessages = mergeTimelineMessagesPreferIncoming(
+			activeRoomEffectiveOlderHistory?.messages ?? [],
+			roomTimelineQuery.data.messages,
+		);
 		return {
 			...roomTimelineQuery.data,
 			messages: mergedMessages,
 			nextCursor: resolveOlderHistoryNextCursor({
 				baseNextCursor: roomTimelineQuery.data.nextCursor,
-				olderHistory: activeRoomOlderHistory,
+				olderHistory: activeRoomEffectiveOlderHistory,
 			}),
 		};
-	}, [activeRoomOlderHistory, roomTimelineQuery.data]);
+	}, [activeRoomEffectiveOlderHistory, roomTimelineQuery.data]);
 	const activeRoomSubmissionReconciliation = useMemo(
 		() =>
 			activeRoomBaseTimeline
@@ -1819,6 +2075,36 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 				: activeRoomBaseTimeline,
 		[activeRoomBaseTimeline, activeRoomSubmissionReconciliation],
 	);
+	useEffect(() => {
+		if (!roomId || !activeRoomEffectiveOlderHistory || olderHistoryStatesEqual(activeRoomOlderHistory, activeRoomEffectiveOlderHistory)) {
+			return;
+		}
+
+		setRoomOlderHistory((currentHistory) => {
+			const currentRoomHistory = currentHistory[roomId];
+			if (olderHistoryStatesEqual(currentRoomHistory, activeRoomEffectiveOlderHistory)) {
+				return currentHistory;
+			}
+
+			const nextHistory = {
+				...currentHistory,
+				[roomId]: activeRoomEffectiveOlderHistory,
+			};
+			roomOlderHistoryRef.current = nextHistory;
+			return nextHistory;
+		});
+	}, [activeRoomEffectiveOlderHistory, activeRoomOlderHistory, roomId]);
+	useEffect(() => {
+		if (!roomId || !activeRoomBaseTimeline) {
+			return;
+		}
+
+		activeRoomLoadedWindowRef.current = {
+			messages: activeRoomBaseTimeline.messages,
+			nextCursor: activeRoomBaseTimeline.nextCursor,
+			roomId,
+		};
+	}, [activeRoomBaseTimeline, roomId]);
 	const prefetchOlderRoomHistoryPage = useCallback(
 		(targetRoomId: string, cursor?: string | null) => {
 			if (!cursor) {
@@ -1873,14 +2159,15 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			const baseTimeline =
 				queryClient.getQueryData<RoomTimelineSnapshot>(betterChatQueryKeys.roomTimeline(targetRoomId)) ??
 				(targetRoomId === roomId ? roomTimelineQuery.data : undefined);
-			const currentOlderHistory = roomOlderHistoryRef.current[targetRoomId];
+			const currentOlderHistory =
+				targetRoomId === roomId ? activeRoomEffectiveOlderHistory : roomOlderHistoryRef.current[targetRoomId];
 			const cursor = resolveOlderHistoryLoadCursor({
 				baseNextCursor: baseTimeline?.nextCursor,
 				olderHistory: currentOlderHistory,
 			});
 			return prefetchOlderRoomHistoryPage(targetRoomId, cursor);
 		},
-		[prefetchOlderRoomHistoryPage, queryClient, roomId, roomTimelineQuery.data],
+		[activeRoomEffectiveOlderHistory, prefetchOlderRoomHistoryPage, queryClient, roomId, roomTimelineQuery.data],
 	);
 	useEffect(() => {
 		const conversationBody = conversationBodyRef.current;
@@ -1925,6 +2212,58 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	}, [
 		activeRoomTimeline,
 		rememberLatestRoomNotificationBaseline,
+		roomId,
+	]);
+	useEffect(() => {
+		if (
+			!roomId ||
+			!activeRoomTimeline ||
+			typeof window === 'undefined' ||
+			!isBrowserNotificationDeliveryEnabled({
+				delivery: effectiveBrowserNotificationDelivery,
+				permission: browserNotificationPermission,
+			})
+		) {
+			return;
+		}
+
+		const { pageFocused, pageVisible } = resolveBrowserNotificationPageState();
+		if (pageFocused && pageVisible) {
+			return;
+		}
+
+		const activeRoomNotificationKind = activeRoomKind ?? activeEntry?.kind ?? 'channel';
+		const messagesToNotify = resolveSidebarNotificationMessages({
+			currentUser,
+			entry: {
+				kind: activeRoomNotificationKind,
+			},
+			lastNotifiedMessageId: roomNotificationLastMessageIdRef.current[roomId] ?? null,
+			limit: activeRoomTimeline.messages.length,
+			messages: activeRoomTimeline.messages,
+			preference: activeRoomAlertPreference,
+		});
+		if (messagesToNotify.length === 0) {
+			return;
+		}
+
+		emitRoomMessageNotifications({
+			entry: {
+				id: roomId,
+				title: activeRoomTitle,
+			},
+			messages: messagesToNotify,
+		});
+	}, [
+		activeEntry?.kind,
+		activeRoomAlertPreference,
+		activeRoomKind,
+		activeRoomTimeline,
+		activeRoomTitle,
+		browserNotificationPermission,
+		currentUser,
+		effectiveBrowserNotificationDelivery,
+		emitRoomMessageNotifications,
 		roomId,
 	]);
 	const activeRoomMentionInteractionUsers = useMemo(
@@ -1996,7 +2335,8 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			const baseTimeline =
 				queryClient.getQueryData<RoomTimelineSnapshot>(betterChatQueryKeys.roomTimeline(targetRoomId)) ??
 				(targetRoomId === roomId ? roomTimelineQuery.data : undefined);
-			const currentOlderHistory = roomOlderHistoryRef.current[targetRoomId];
+			const currentOlderHistory =
+				targetRoomId === roomId ? activeRoomEffectiveOlderHistory : roomOlderHistoryRef.current[targetRoomId];
 			const cursor = resolveOlderHistoryLoadCursor({
 				baseNextCursor: baseTimeline?.nextCursor,
 				olderHistory: currentOlderHistory,
@@ -2027,7 +2367,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 							  });
 				const currentHistory = roomOlderHistoryRef.current;
 				const merged = mergeOlderHistoryPage({
-					current: currentHistory[targetRoomId],
+					current: targetRoomId === roomId ? activeRoomEffectiveOlderHistory : currentHistory[targetRoomId],
 					page: olderPage,
 				});
 				const nextCursorToPrefetch = merged.state.pagination.kind === 'ready' ? merged.state.pagination.nextCursor : null;
@@ -2054,7 +2394,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 				});
 			}
 		},
-		[prefetchOlderRoomHistoryPage, queryClient, roomId, roomTimelineQuery.data],
+		[activeRoomEffectiveOlderHistory, prefetchOlderRoomHistoryPage, queryClient, roomId, roomTimelineQuery.data],
 	);
 	const clearRoomUnreadState = useCallback(
 		(targetRoomId: string) => {
@@ -2072,10 +2412,19 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	);
 	const logoutMutation = useMutation({
 		mutationFn: () => betterChatApi.logout(),
+		onMutate: () => {
+			quiesceSession();
+		},
 		onSuccess: () => {
 			resetSessionAndReturnToLogin();
 		},
 		onError: (error) => {
+			if (isBetterChatApiError(error) && error.code === 'UNAUTHENTICATED') {
+				resetSessionAndReturnToLogin();
+				return;
+			}
+
+			setSessionLifecycle('active');
 			const errorHandler = createMutationErrorHandler<unknown, unknown>({
 				showToast: showErrorToast,
 				queryClient,
@@ -2120,6 +2469,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			}));
 		},
 		onError: (error, variables, context) => {
+			queuedFavoriteMutationRef.current = null;
 			const errorHandler = createMutationErrorHandler<
 				{ favorite: boolean; targetRoomId: string },
 				{ previousSidebarEntry?: RoomSummary; previousRoomDetails?: RoomSnapshot }
@@ -2139,9 +2489,24 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			errorHandler.onError(error, variables, context);
 		},
 		onSettled: (_data, _error, variables) => {
+			setFavoriteMutationInFlight(false);
 			void invalidateRoomSnapshotQueries(variables.targetRoomId);
 		},
 	});
+	useEffect(() => {
+		if (favoriteOverridesEnabled || favoriteMutationInFlight) {
+			return;
+		}
+
+		const queuedFavoriteMutation = queuedFavoriteMutationRef.current;
+		if (!queuedFavoriteMutation) {
+			return;
+		}
+
+		queuedFavoriteMutationRef.current = null;
+		setFavoriteMutationInFlight(true);
+		favoriteMutation.mutate(queuedFavoriteMutation);
+	}, [favoriteMutation, favoriteMutationInFlight, favoriteOverridesEnabled]);
 	const roomOpenMutation = useMutation({
 		mutationFn: (targetRoomId: string) => betterChatApi.setRoomVisibility(targetRoomId, { visibility: 'visible' }),
 		onMutate: (targetRoomId) => {
@@ -2439,7 +2804,14 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		},
 		onStatusChange: setRealtimeStatus,
 		onSocketError: (error: SocketError) => {
-			console.error('[WebSocket Error]', error);
+			if (sessionLifecycle !== 'active') {
+				return;
+			}
+
+			const recoverableTransportError = error.category === 'connection-error' || error.category === 'connection-lost';
+			if (!recoverableTransportError) {
+				console.error('[WebSocket Error]', error);
+			}
 
 			// Show toast for critical errors
 			if (error.category === 'authentication-failed') {
@@ -2457,7 +2829,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 				realtimeControllerRef.current = null;
 			}
 		};
-	}, [apiModePollingEnabled, queryClient, realtimePushEnabled, refetchActiveRoomSnapshot, refetchActiveSidebarSnapshot, resetSessionAndReturnToLogin, showErrorToast]);
+	}, [apiModePollingEnabled, queryClient, realtimePushEnabled, refetchActiveRoomSnapshot, refetchActiveSidebarSnapshot, resetSessionAndReturnToLogin, sessionLifecycle, showErrorToast]);
 
 	useEffect(() => {
 		const controller = realtimeControllerRef.current;
@@ -2884,6 +3256,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 						const uploadImageFile = (uploadFile: File) =>
 							betterChatApi.uploadImage(targetRoomId, {
 								file: uploadFile,
+								submissionId: localMessage.message.submissionId,
 								text: localMessage.payload.text || undefined,
 							});
 
@@ -2900,8 +3273,8 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 						}
 					}
 
-					removeLocalRoomMessage(targetRoomId, messageId);
 					appendServerTimelineMessage(targetRoomId, deliveredMessage);
+					removeLocalRoomMessage(targetRoomId, messageId);
 					touchRoomAfterLocalSend(targetRoomId, deliveredMessage.createdAt);
 					requestCurrentRoomBottomStick(targetRoomId);
 					void Promise.all([
@@ -3256,18 +3629,25 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 
 		logoutMutation.mutate();
 	}, [logoutMutation]);
-	const favoriteToggleBusy = !favoriteOverridesEnabled && favoriteMutation.isPending;
+	const favoriteToggleBusy = !favoriteOverridesEnabled && favoriteMutationInFlight;
 
 	const handleFavoriteToggle = useCallback(() => {
-		if (!roomId || favoriteToggleBusy) {
+		if (!roomId) {
 			return;
 		}
 
 		if (!favoriteOverridesEnabled) {
-			favoriteMutation.mutate({
+			const queuedFavoriteMutation = {
 				targetRoomId: roomId,
 				favorite: !roomIsFavorite,
-			});
+			};
+			if (!favoriteMutationInFlight) {
+				setFavoriteMutationInFlight(true);
+				favoriteMutation.mutate(queuedFavoriteMutation);
+				return;
+			}
+
+			queuedFavoriteMutationRef.current = queuedFavoriteMutation;
 			return;
 		}
 
@@ -3283,7 +3663,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 				}),
 			}),
 		);
-	}, [favoriteMutation, favoriteOverridesEnabled, favoriteToggleBusy, roomFavoriteServerValue, roomId, roomIsFavorite]);
+	}, [favoriteMutation, favoriteMutationInFlight, favoriteOverridesEnabled, roomFavoriteServerValue, roomId, roomIsFavorite]);
 
 	const handleRetryFailedMessage = useCallback(
 		(messageId: string) => {
@@ -3300,6 +3680,10 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 				...currentMessage,
 				errorMessage: undefined,
 				status: 'sending',
+			}));
+			setTimelineExpansionRequest((currentRequest) => ({
+				messageId,
+				token: (currentRequest?.token ?? 0) + 1,
 			}));
 			requestCurrentRoomBottomStick(roomId);
 			scheduleLocalRoomMessageSend(roomId, messageId);
@@ -3320,32 +3704,50 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 
 	const handleRoomAlertPreferenceChange = useCallback(
 		(nextPreference: RoomAlertPreference) => {
-			if (!roomId) {
+			if (!roomId || !activeRoomKind) {
 				return;
-			}
-
-			if (
-				nextPreference === 'subscribed' &&
-				typeof window !== 'undefined' &&
-				'Notification' in window &&
-				window.Notification.permission === 'default'
-			) {
-				void window.Notification.requestPermission().catch(() => 'default');
 			}
 
 			setRoomAlertPreferences((currentPreferences) =>
 				updateRoomAlertPreferences({
+					defaults: roomNotificationDefaults,
 					preferences: currentPreferences,
 					roomId,
+					roomKind: activeRoomKind,
 					nextValue: nextPreference,
 				}),
 			);
 		},
-		[roomId],
+		[activeRoomKind, roomId, roomNotificationDefaults],
 	);
-	const handleRoomAlertToggle = useCallback(() => {
-		handleRoomAlertPreferenceChange(activeRoomAlertPreference === 'subscribed' ? 'normal' : 'subscribed');
-	}, [activeRoomAlertPreference, handleRoomAlertPreferenceChange]);
+	const handleRoomAlertMenuToggle = useCallback(() => {
+		if (!roomId) {
+			return;
+		}
+
+		setRoomAlertMenuOpen((currentOpen) => !currentOpen);
+	}, [roomId]);
+	const handleRoomAlertDefaultSelect = useCallback(() => {
+		handleRoomAlertPreferenceChange(activeRoomDefaultAlertPreference);
+		setRoomAlertMenuOpen(false);
+	}, [activeRoomDefaultAlertPreference, handleRoomAlertPreferenceChange]);
+	const handleBrowserNotificationDeliveryChange = useCallback(
+		async (nextDelivery: BrowserNotificationDelivery) => {
+			if (nextDelivery === browserNotificationDelivery) {
+				return;
+			}
+
+			if (nextDelivery !== 'off' && typeof window !== 'undefined' && 'Notification' in window && window.Notification.permission === 'default') {
+				const nextPermission = await window.Notification.requestPermission().catch(() => resolveBrowserNotificationPermissionState());
+				setBrowserNotificationPermission(nextPermission);
+			} else {
+				setBrowserNotificationPermission(resolveBrowserNotificationPermissionState());
+			}
+
+			setBrowserNotificationDelivery(nextDelivery);
+		},
+		[browserNotificationDelivery],
+	);
 	const handleMotionPreferenceChange = useCallback((nextPreference: MotionPreference) => {
 		setMotionPreference(nextPreference);
 	}, []);
@@ -3396,15 +3798,21 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 						</div>
 					) : null}
 						<SettingsPanel
+							browserNotificationBackgroundSupported={browserNotificationBackgroundAvailable}
+							browserNotificationDelivery={browserNotificationDelivery}
+							browserNotificationPermission={browserNotificationPermission}
+							onBrowserNotificationDeliveryChange={handleBrowserNotificationDeliveryChange}
 							onOpenChange={setSettingsOpen}
 							onComposerSendShortcutChange={setComposerSendShortcut}
 							onLogout={handleLogout}
 							onMotionPreferenceChange={handleMotionPreferenceChange}
+							onRoomNotificationDefaultsChange={setRoomNotificationDefaults}
 							onThemePreferenceChange={setThemePreference}
 							open={settingsOpen}
 							logoutPending={logoutMutation.isPending}
 							motionPreference={motionPreference}
 							resolvedTheme={resolvedTheme}
+							roomNotificationDefaults={roomNotificationDefaults}
 							sendShortcut={composerSendShortcut}
 							themePreference={themePreference}
 						/>
@@ -3532,8 +3940,10 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 											unreadCount: entryUnreadCount,
 										});
 										const alertPreference = resolveRoomAlertPreference({
+											defaults: roomNotificationDefaults,
 											preferences: roomAlertPreferences,
 											roomId: entryRoomId,
+											roomKind: entry.kind,
 										});
 										const roomStatusText =
 											secondaryMeta.presenceLabel && secondaryMeta.text
@@ -3757,42 +4167,105 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 														<path d='M8 1.85 9.84 5.56l4.1.6-2.97 2.9.7 4.09L8 11.17l-3.67 1.98.7-4.09L2.06 6.16l4.1-.6L8 1.85Z' />
 													</svg>
 											</button>
-											<button
-												aria-label={
-													activeRoomAlertPreference === 'subscribed' ? '关闭该房间浏览器通知' : '订阅该房间浏览器通知'
-												}
-												aria-pressed={activeRoomAlertPreference === 'subscribed'}
-												className={styles.roomAlertToggle}
-												data-active={activeRoomAlertPreference === 'subscribed' ? 'true' : 'false'}
-												data-testid='room-alert-toggle'
-												onClick={handleRoomAlertToggle}
-												onFocus={() => updateKeyboardFocusRegion('header')}
-												onKeyDown={(event) => {
-													if (event.key === 'ArrowLeft') {
-														event.preventDefault();
-														favoriteToggleRef.current?.focus();
-														return;
-													}
+											<div className={styles.roomAlertMenuShell}>
+												<button
+													aria-controls={roomAlertMenuOpen ? 'room-alert-menu' : undefined}
+													aria-expanded={roomAlertMenuOpen}
+													aria-haspopup='menu'
+													aria-label={`打开房间通知设置，当前：${roomAlertPreferenceLabel[activeRoomAlertPreference]}`}
+													className={styles.roomAlertToggle}
+													data-active={activeRoomAlertPreference}
+													data-testid='room-alert-toggle'
+													onClick={handleRoomAlertMenuToggle}
+													onFocus={() => updateKeyboardFocusRegion('header')}
+													onKeyDown={(event) => {
+														if (event.key === 'ArrowLeft') {
+															event.preventDefault();
+															favoriteToggleRef.current?.focus();
+															return;
+														}
 
-													if (event.key === 'ArrowRight') {
-														event.preventDefault();
-														roomInfoTriggerRef.current?.focus();
-														return;
-													}
+														if (event.key === 'ArrowRight') {
+															event.preventDefault();
+															roomInfoTriggerRef.current?.focus();
+															return;
+														}
 
-													if (event.key === 'ArrowDown') {
-														event.preventDefault();
-														void focusTimeline();
-													}
-												}}
-												ref={roomAlertToggleRef}
-												title={spaceText(activeRoomAlertPreference === 'subscribed' ? '已订阅浏览器通知' : '浏览器通知已静默')}
-												type='button'
-											>
-												<span aria-hidden='true' className={styles.roomAlertToggleIcon}>
-													<RoomAlertToggleGlyph preference={activeRoomAlertPreference} />
-												</span>
-											</button>
+														if (event.key === 'ArrowDown') {
+															event.preventDefault();
+															void focusTimeline();
+														}
+													}}
+													ref={roomAlertToggleRef}
+													title={spaceText(`当前房间通知：${roomAlertPreferenceLabel[activeRoomAlertPreference]}`)}
+													type='button'
+												>
+													<span aria-hidden='true' className={styles.roomAlertToggleIcon}>
+														<RoomAlertToggleGlyph preference={activeRoomAlertPreference} />
+													</span>
+												</button>
+												{roomAlertMenuOpen ? (
+													<div
+														className={styles.roomAlertMenu}
+														data-theme-surface='true'
+														data-testid='room-alert-menu'
+														id='room-alert-menu'
+														ref={roomAlertMenuRef}
+														role='menu'
+													>
+														<button
+															aria-checked={activeRoomAlertUsesDefault}
+															className={styles.roomAlertMenuItem}
+															data-active={activeRoomAlertUsesDefault ? 'true' : 'false'}
+															data-testid='room-alert-menu-default'
+															onClick={handleRoomAlertDefaultSelect}
+															role='menuitemradio'
+															type='button'
+														>
+															<span className={styles.roomAlertMenuCopy}>
+																<strong>{spaceText('跟随默认')}</strong>
+																<span>
+																	{spaceText(
+																		`当前默认：${resolveRoomAlertDefaultLabel({
+																			defaults: roomNotificationDefaults,
+																			roomKind: activeRoomKind ?? roomKind,
+																		})}`,
+																	)}
+																</span>
+															</span>
+															<span aria-hidden='true' className={styles.roomAlertMenuIndicator} />
+														</button>
+														{(['all', 'personal', 'mute'] as const).map((preference) => (
+															<button
+																key={preference}
+																aria-checked={!activeRoomAlertUsesDefault && activeRoomAlertPreference === preference}
+																className={styles.roomAlertMenuItem}
+																data-active={!activeRoomAlertUsesDefault && activeRoomAlertPreference === preference ? 'true' : 'false'}
+																data-testid={`room-alert-menu-${preference}`}
+																onClick={() => {
+																	handleRoomAlertPreferenceChange(preference);
+																	setRoomAlertMenuOpen(false);
+																}}
+																role='menuitemradio'
+																type='button'
+															>
+																<span className={styles.roomAlertMenuCopy}>
+																	<strong>{spaceText(roomAlertPreferenceLabel[preference])}</strong>
+																	<span>
+																		{spaceText(
+																			resolveRoomAlertPreferenceDescription({
+																				preference,
+																				roomKind: activeRoomKind ?? roomKind,
+																			}),
+																		)}
+																	</span>
+																</span>
+																<span aria-hidden='true' className={styles.roomAlertMenuIndicator} />
+															</button>
+														))}
+													</div>
+												) : null}
+											</div>
 											<button
 												aria-controls={roomInfoOpen ? 'room-info-sidebar' : undefined}
 												aria-expanded={roomInfoOpen}
@@ -3872,6 +4345,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 									ensureDirectConversationMutation.variables === activeTimelineAuthorUserId
 								}
 								currentUser={currentUser}
+								expansionRequest={timelineExpansionRequest}
 								failedMessageActions={activeRoomFailedMessageActions}
 								focusRequest={timelineFocusRequest}
 								forceScrollToBottomToken={timelineScrollToBottomToken}
@@ -4030,18 +4504,44 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 							</div>
 
 							<div className={styles.infoSection}>
-								<p className={styles.infoLabel}>{spaceText('消息订阅')}</p>
+								<p className={styles.infoLabel}>{spaceText('房间通知')}</p>
 								<div className={styles.alertPreferenceSummary} data-active={activeRoomAlertPreference} data-testid='room-alert-summary'>
 									<span aria-hidden='true' className={styles.alertPreferenceSummaryIcon}>
 										<RoomAlertPreferenceGlyph preference={activeRoomAlertPreference} />
 									</span>
 									<div className={styles.alertPreferenceSummaryCopy}>
 										<strong>{spaceText(roomAlertPreferenceLabel[activeRoomAlertPreference])}</strong>
+										<span>{spaceText(resolveRoomAlertPreferenceDescription({ preference: activeRoomAlertPreference, roomKind: roomDetailsQuery.data.room.kind }))}</span>
 										<span>
 											{spaceText(
-												activeRoomAlertPreference === 'subscribed'
-													? '新消息会触发浏览器通知。'
-													: '仅在侧栏显示提醒，不弹出浏览器通知。',
+												activeRoomAlertUsesDefault
+													? `默认值：跟随${roomDetailsQuery.data.room.kind === 'dm' ? '私信' : '频道与群组'}默认（${roomAlertPreferenceLabel[activeRoomDefaultAlertPreference]}）`
+													: `默认值：已覆盖${roomDetailsQuery.data.room.kind === 'dm' ? '私信' : '频道与群组'}默认（${roomAlertPreferenceLabel[activeRoomDefaultAlertPreference]}）`,
+											)}
+										</span>
+										<span>
+											{spaceText(
+												`浏览器：${
+													effectiveBrowserNotificationDelivery === 'off'
+														? browserNotificationDeliveryLabel.off
+														: browserNotificationPermission === 'unsupported'
+															? '当前浏览器不支持'
+															: browserNotificationPermission === 'denied'
+																? '浏览器权限已阻止'
+																: browserNotificationPermission === 'default'
+																	? '等待浏览器授权'
+																	: browserNotificationDeliveryLabel[effectiveBrowserNotificationDelivery]
+												}`,
+											)}
+										</span>
+										<span>
+											{spaceText(
+												resolveRoomAlertEffectSummary({
+													delivery: effectiveBrowserNotificationDelivery,
+													permission: browserNotificationPermission,
+													preference: activeRoomAlertPreference,
+													roomKind: roomDetailsQuery.data.room.kind,
+												}),
 											)}
 										</span>
 									</div>

@@ -23,7 +23,16 @@ const mergeTimelineMessagesInternal = (
 			originalOrder.set(message.id, currentMessages.length + index);
 		}
 
-		mergedById.set(message.id, prefer === 'incoming' ? message : (mergedById.get(message.id) ?? message));
+		const existingMessage = mergedById.get(message.id);
+		if (prefer === 'incoming') {
+			mergedById.set(message.id, {
+				...message,
+				...(message.submissionId === undefined && existingMessage?.submissionId ? { submissionId: existingMessage.submissionId } : {}),
+			});
+			continue;
+		}
+
+		mergedById.set(message.id, existingMessage ?? message);
 	}
 
 	return [...mergedById.values()].sort((left, right) => {

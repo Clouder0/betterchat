@@ -786,16 +786,22 @@
 	padding-inline: 0.46rem;
 }
 
-.roomBadge[data-priority='subscribed'] {
+.roomBadge[data-priority='all'] {
 	background: color-mix(in srgb, var(--accent) 16%, var(--bg-elevated));
 	border-color: color-mix(in srgb, var(--accent) 10%, var(--border-soft));
 	color: color-mix(in srgb, var(--accent-strong) 28%, var(--text-strong));
 }
 
-.roomBadge[data-priority='normal'] {
+.roomBadge[data-priority='personal'] {
 	background: color-mix(in srgb, var(--surface-panel-soft) 82%, var(--bg-elevated));
 	border-color: color-mix(in srgb, var(--border-soft) 92%, transparent);
 	color: color-mix(in srgb, var(--text-soft) 84%, var(--text-muted));
+}
+
+.roomBadge[data-priority='mute'] {
+	background: color-mix(in srgb, var(--surface-panel-soft) 76%, var(--bg-elevated));
+	border-color: color-mix(in srgb, var(--border-soft) 88%, transparent);
+	color: color-mix(in srgb, var(--text-faint) 90%, var(--text-muted));
 }
 
 .roomBadge[data-mentioned='true'] {
@@ -1308,6 +1314,11 @@
 	gap: 0.02rem;
 }
 
+.roomAlertMenuShell {
+	position: relative;
+	display: inline-flex;
+}
+
 .roomAlertToggle {
 	color: color-mix(in srgb, var(--text-faint) 82%, var(--text-soft));
 	opacity: 0.92;
@@ -1327,20 +1338,112 @@
 	opacity: 1;
 }
 
-.roomAlertToggle[data-active='true'] {
+.roomAlertToggle[data-active='all'] {
 	color: color-mix(in srgb, var(--accent-strong) 40%, var(--text-strong));
 	opacity: 1;
 }
 
-.roomAlertToggle[data-active='true']:hover {
+.roomAlertToggle[data-active='all']:hover {
 	background: color-mix(in srgb, var(--surface-panel-soft) 76%, transparent);
 	color: color-mix(in srgb, var(--accent-strong) 46%, var(--text-strong));
 }
 
-.roomAlertToggle[data-active='true']:focus-visible {
+.roomAlertToggle[data-active='all']:focus-visible {
 	background: color-mix(in srgb, var(--surface-panel-soft) 80%, transparent);
 	color: color-mix(in srgb, var(--accent-strong) 48%, var(--text-strong));
 	box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.roomAlertToggle[data-active='personal'] {
+	color: color-mix(in srgb, var(--accent) 34%, var(--text-strong));
+	opacity: 1;
+}
+
+.roomAlertToggle[data-active='mute'] {
+	color: color-mix(in srgb, var(--text-muted) 92%, var(--text-faint));
+}
+
+.roomAlertMenu {
+	position: absolute;
+	top: calc(100% + 0.42rem);
+	right: 0;
+	z-index: 5;
+	display: flex;
+	flex-direction: column;
+	gap: 0.28rem;
+	width: min(18rem, 72vw);
+	padding: 0.44rem;
+	border: 1px solid color-mix(in srgb, var(--border-strong) 92%, transparent);
+	border-radius: 0.92rem;
+	background: color-mix(in srgb, var(--surface-panel) 96%, var(--surface-field));
+	box-shadow: var(--shadow-panel);
+}
+
+.roomAlertMenuItem {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 0.8rem;
+	width: 100%;
+	padding: 0.72rem 0.76rem;
+	border: 1px solid color-mix(in srgb, var(--border-soft) 92%, transparent);
+	border-radius: 0.78rem;
+	background: color-mix(in srgb, var(--surface-field) 92%, var(--surface-panel));
+	color: inherit;
+	text-align: left;
+	transition:
+		border-color 140ms ease,
+		background 140ms ease;
+}
+
+.roomAlertMenuItem:hover {
+	border-color: color-mix(in srgb, var(--border-strong) 78%, transparent);
+	background: color-mix(in srgb, var(--surface-panel-muted) 88%, var(--surface-field));
+}
+
+.roomAlertMenuItem:focus-visible {
+	outline: 2px solid var(--focus-ring);
+	outline-offset: 2px;
+}
+
+.roomAlertMenuItem[data-active='true'] {
+	border-color: color-mix(in srgb, var(--accent) 20%, var(--border-strong));
+	background: color-mix(in srgb, var(--surface-panel-muted) 94%, var(--surface-field));
+}
+
+.roomAlertMenuCopy {
+	display: flex;
+	flex-direction: column;
+	gap: 0.18rem;
+	min-width: 0;
+}
+
+.roomAlertMenuCopy strong {
+	color: var(--text-strong);
+	font-size: 0.8rem;
+	font-weight: 600;
+	line-height: 1.25;
+}
+
+.roomAlertMenuCopy span {
+	color: var(--text-muted);
+	font-size: 0.74rem;
+	line-height: 1.45;
+}
+
+.roomAlertMenuIndicator {
+	flex: 0 0 auto;
+	width: 0.72rem;
+	height: 0.72rem;
+	margin-top: 0.16rem;
+	border: 1px solid color-mix(in srgb, var(--border-strong) 82%, transparent);
+	border-radius: 999px;
+	background: transparent;
+}
+
+.roomAlertMenuItem[data-active='true'] .roomAlertMenuIndicator {
+	border-color: color-mix(in srgb, var(--accent) 28%, var(--border-strong));
+	background: color-mix(in srgb, var(--accent) 24%, var(--surface-panel));
 }
 
 .roomAlertToggleIcon,
@@ -1472,7 +1575,7 @@
 	background: color-mix(in srgb, var(--surface-panel) 84%, var(--surface-panel-soft));
 }
 
-.alertPreferenceSummary[data-active='subscribed'] {
+.alertPreferenceSummary[data-active='all'] {
 	border-color: color-mix(in srgb, var(--accent) 12%, var(--border-soft));
 }
 
@@ -1486,8 +1589,12 @@
 	color: color-mix(in srgb, var(--text-faint) 84%, var(--text-soft));
 }
 
-.alertPreferenceSummary[data-active='subscribed'] .alertPreferenceSummaryIcon {
+.alertPreferenceSummary[data-active='all'] .alertPreferenceSummaryIcon {
 	color: color-mix(in srgb, var(--accent-strong) 38%, var(--text-strong));
+}
+
+.alertPreferenceSummary[data-active='personal'] .alertPreferenceSummaryIcon {
+	color: color-mix(in srgb, var(--accent) 34%, var(--text-strong));
 }
 
 .alertPreferenceSummaryIcon svg {

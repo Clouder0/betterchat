@@ -1,5 +1,13 @@
 import type { RoomAttentionLevel, RoomSummary } from '@/lib/chatModels';
 
+import {
+	DEFAULT_ROOM_NOTIFICATION_DEFAULTS,
+	resolveRoomNotificationPreference,
+	type RoomNotificationDefaults,
+	type RoomNotificationPreferenceStore,
+} from '@/features/notifications/notificationPreferences';
+import { isInterruptiveRoomAttentionAllowed } from '@/features/notifications/notificationPolicy';
+
 export type SidebarAttentionDockState = {
 	entries: RoomSummary[];
 	overflowCount: number;
@@ -29,10 +37,26 @@ const parseActivityTimestamp = (value?: string) => {
 const hasDockAttention = ({
 	activeRoomId,
 	entry,
+	notificationDefaults,
+	notificationPreferences,
 }: {
 	activeRoomId?: string | null;
 	entry: RoomSummary;
-}) => entry.visibility === 'visible' && entry.id !== activeRoomId && entry.attention.level !== 'none';
+	notificationDefaults: RoomNotificationDefaults;
+	notificationPreferences: RoomNotificationPreferenceStore;
+}) =>
+	entry.visibility === 'visible' &&
+	entry.id !== activeRoomId &&
+	entry.attention.level !== 'none' &&
+	isInterruptiveRoomAttentionAllowed({
+		entry,
+		preference: resolveRoomNotificationPreference({
+			defaults: notificationDefaults,
+			preferences: notificationPreferences,
+			roomId: entry.id,
+			roomKind: entry.kind,
+		}),
+	});
 
 const compareDockEntries = (left: RoomSummary, right: RoomSummary) => {
 	const attentionDelta = attentionPriority[right.attention.level] - attentionPriority[left.attention.level];
@@ -53,9 +77,13 @@ export const buildSidebarAttentionDock = (
 	{
 		activeRoomId,
 		maxVisible = 3,
+		notificationDefaults = DEFAULT_ROOM_NOTIFICATION_DEFAULTS,
+		notificationPreferences = {},
 	}: {
 		activeRoomId?: string | null;
 		maxVisible?: number;
+		notificationDefaults?: RoomNotificationDefaults;
+		notificationPreferences?: RoomNotificationPreferenceStore;
 	} = {},
 ): SidebarAttentionDockState => {
 	const boundedMaxVisible = Math.max(maxVisible, 0);
@@ -64,6 +92,8 @@ export const buildSidebarAttentionDock = (
 			hasDockAttention({
 				activeRoomId,
 				entry,
+				notificationDefaults,
+				notificationPreferences,
 			}),
 		)
 		.sort(compareDockEntries);

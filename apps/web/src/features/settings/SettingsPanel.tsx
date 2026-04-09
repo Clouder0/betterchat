@@ -1,6 +1,7 @@
 import * as Dialog from '@radix-ui/react-dialog';
 
 import { type MotionPreference } from '@/app/motionPreference';
+import { type BrowserNotificationDelivery, type BrowserNotificationPermissionState, type RoomNotificationDefaults, type RoomNotificationPreference } from '@/features/notifications/notificationPreferences';
 import { type ResolvedTheme, type ThemePreference } from '@/app/ThemeProvider';
 import {
 	composerSendShortcutOptions,
@@ -25,6 +26,25 @@ const motionOptions = [
 ] as const satisfies readonly {
 	label: string;
 	value: MotionPreference;
+}[];
+
+const browserNotificationOptions = [
+	{ value: 'off', label: '关闭', description: '不在此浏览器弹出 BetterChat 通知' },
+	{ value: 'foreground', label: '前台', description: '仅在 BetterChat 打开时允许浏览器通知' },
+	{ value: 'background', label: '后台', description: '当前构建预留该模式，尚未开放后台推送' },
+] as const satisfies readonly {
+	description: string;
+	label: string;
+	value: BrowserNotificationDelivery;
+}[];
+
+const roomPreferenceOptions = [
+	{ value: 'all', label: '所有消息' },
+	{ value: 'personal', label: '仅个人相关' },
+	{ value: 'mute', label: '静音' },
+] as const satisfies readonly {
+	label: string;
+	value: RoomNotificationPreference;
 }[];
 
 const settingsGlyph = (
@@ -53,28 +73,78 @@ const closeGlyph = (
 	</svg>
 );
 
+const resolveBrowserNotificationHint = ({
+	backgroundSupported,
+	delivery,
+	permission,
+}: {
+	backgroundSupported: boolean;
+	delivery: BrowserNotificationDelivery;
+	permission: BrowserNotificationPermissionState;
+}) => {
+	if (permission === 'unsupported') {
+		return '当前浏览器不支持 Notification API。';
+	}
+
+	if (permission === 'denied') {
+		return '浏览器权限已阻止；设置会保留，但当前无法真正送达。';
+	}
+
+	if (permission === 'default' && delivery !== 'off') {
+		return '开启通知时会向浏览器申请授权。';
+	}
+
+	if (!backgroundSupported) {
+		return delivery === 'off'
+			? '当前仅支持前台浏览器通知。'
+			: '当前构建仅支持 BetterChat 打开时的浏览器通知。';
+	}
+
+	if (delivery === 'background') {
+		return '允许在 BetterChat 不在前台时继续接收通知。';
+	}
+
+	if (delivery === 'foreground') {
+		return '仅在 BetterChat 打开时允许浏览器通知。';
+	}
+
+	return '浏览器通知已关闭。';
+};
+
 export const SettingsPanel = ({
-	onOpenChange,
+	browserNotificationBackgroundSupported,
+	browserNotificationDelivery,
+	browserNotificationPermission,
+	onBrowserNotificationDeliveryChange,
 	onComposerSendShortcutChange,
 	onLogout,
 	onMotionPreferenceChange,
+	onOpenChange,
+	onRoomNotificationDefaultsChange,
 	onThemePreferenceChange,
 	logoutPending = false,
 	motionPreference,
 	open,
 	resolvedTheme,
+	roomNotificationDefaults,
 	sendShortcut,
 	themePreference,
 }: {
-	onOpenChange: (open: boolean) => void;
+	browserNotificationBackgroundSupported: boolean;
+	browserNotificationDelivery: BrowserNotificationDelivery;
+	browserNotificationPermission: BrowserNotificationPermissionState;
+	onBrowserNotificationDeliveryChange: (value: BrowserNotificationDelivery) => void;
 	onComposerSendShortcutChange: (value: ComposerSendShortcut) => void;
 	onLogout: () => void;
 	onMotionPreferenceChange: (value: MotionPreference) => void;
+	onOpenChange: (open: boolean) => void;
+	onRoomNotificationDefaultsChange: (value: RoomNotificationDefaults) => void;
 	onThemePreferenceChange: (value: ThemePreference) => void;
 	logoutPending?: boolean;
 	motionPreference: MotionPreference;
 	open: boolean;
 	resolvedTheme: ResolvedTheme;
+	roomNotificationDefaults: RoomNotificationDefaults;
 	sendShortcut: ComposerSendShortcut;
 	themePreference: ThemePreference;
 }) => (
@@ -99,7 +169,7 @@ export const SettingsPanel = ({
 				<div className={styles.header}>
 					<div className={styles.headerCopy}>
 						<Dialog.Title className={styles.title}>{spaceText('设置')}</Dialog.Title>
-						<Dialog.Description className={styles.description}>{spaceText('本地界面偏好')}</Dialog.Description>
+						<Dialog.Description className={styles.description}>{spaceText('界面与通知偏好')}</Dialog.Description>
 					</div>
 
 					<Dialog.Close asChild>
@@ -139,6 +209,99 @@ export const SettingsPanel = ({
 								{spaceText(option.label)}
 							</button>
 						))}
+					</div>
+				</section>
+
+				<section className={styles.section}>
+					<div className={styles.sectionHeader}>
+						<p className={styles.sectionLabel}>{spaceText('浏览器通知')}</p>
+						<p className={styles.sectionHint}>
+							{spaceText(
+								resolveBrowserNotificationHint({
+									backgroundSupported: browserNotificationBackgroundSupported,
+									delivery: browserNotificationDelivery,
+									permission: browserNotificationPermission,
+								}),
+							)}
+						</p>
+					</div>
+
+					<div className={styles.optionList} role='radiogroup' aria-label='浏览器通知送达方式'>
+						{browserNotificationOptions.map((option) => {
+							const disabled = option.value === 'background' && !browserNotificationBackgroundSupported;
+							return (
+								<button
+									key={option.value}
+									aria-checked={browserNotificationDelivery === option.value}
+									className={styles.optionCard}
+									data-active={browserNotificationDelivery === option.value ? 'true' : 'false'}
+									data-testid={`settings-browser-notifications-${option.value}`}
+									disabled={disabled}
+									onClick={() => onBrowserNotificationDeliveryChange(option.value)}
+									role='radio'
+									type='button'
+								>
+									<span className={styles.optionCopy}>
+										<strong className={styles.optionTitle}>{spaceText(option.label)}</strong>
+										<span className={styles.optionDescription}>{spaceText(option.description)}</span>
+									</span>
+									<span aria-hidden='true' className={styles.optionIndicator} />
+								</button>
+							);
+						})}
+					</div>
+				</section>
+
+				<section className={styles.section}>
+					<div className={styles.sectionHeader}>
+						<p className={styles.sectionLabel}>{spaceText('房间通知默认值')}</p>
+						<p className={styles.sectionHint}>{spaceText('房间未单独覆盖时，按下面规则决定是否允许打断你')}</p>
+					</div>
+
+					<div className={styles.preferenceField}>
+						<p className={styles.preferenceLegend}>{spaceText('私信')}</p>
+						<div className={styles.segmentedGroup} role='group' aria-label='私信通知默认值'>
+							{roomPreferenceOptions.map((option) => (
+								<button
+									key={`dm-${option.value}`}
+									className={styles.segmentedButton}
+									data-active={roomNotificationDefaults.dms === option.value ? 'true' : 'false'}
+									data-testid={`settings-room-default-dm-${option.value}`}
+									onClick={() =>
+										onRoomNotificationDefaultsChange({
+											...roomNotificationDefaults,
+											dms: option.value,
+										})
+									}
+									type='button'
+								>
+									{spaceText(option.label)}
+								</button>
+							))}
+						</div>
+					</div>
+
+					<div className={styles.preferenceField}>
+						<p className={styles.preferenceLegend}>{spaceText('频道与群组')}</p>
+						<div className={styles.segmentedGroup} role='group' aria-label='频道与群组通知默认值'>
+							{roomPreferenceOptions.map((option) => (
+								<button
+									key={`room-${option.value}`}
+									className={styles.segmentedButton}
+									data-active={roomNotificationDefaults.rooms === option.value ? 'true' : 'false'}
+									data-testid={`settings-room-default-room-${option.value}`}
+									onClick={() =>
+										onRoomNotificationDefaultsChange({
+											...roomNotificationDefaults,
+											rooms: option.value,
+										})
+									}
+									type='button'
+								>
+									{spaceText(option.label)}
+								</button>
+							))}
+						</div>
 					</div>
 				</section>
 

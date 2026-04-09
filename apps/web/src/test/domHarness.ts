@@ -229,6 +229,7 @@ export const installTestDom = ({
 		['localStorage', win.localStorage],
 		['sessionStorage', win.sessionStorage],
 		['Node', win.Node],
+		['NodeFilter', win.NodeFilter],
 		['Element', win.Element],
 		['Text', win.Text],
 		['HTMLElement', win.HTMLElement],

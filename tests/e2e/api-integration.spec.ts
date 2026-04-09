@@ -24,6 +24,7 @@ import {
 	readSidebarShellState,
 	readTimelineViewportStateForMessage,
 	readTimelineBottomGap,
+	resetUnexpectedBrowserErrorGuard,
 	scrollTimelineToBottom,
 	TIMELINE_VIEWPORT_ANCHOR_TOP_BIAS,
 	tinyPngFixture,
@@ -1767,12 +1768,22 @@ const liveHistoryProbe = {
 		await expect(page.getByTestId('timeline-unread-divider')).toBeVisible();
 	});
 
-	test('uses the header subscribe toggle and only emits browser notifications for subscribed rooms outside the focused-attended path', async ({
-		page,
-	}) => {
+	type NotificationScenario = {
+		aliceSession: Awaited<ReturnType<typeof createBetterChatSession>>;
+		bobSession: Awaited<ReturnType<typeof createBetterChatSession>>;
+		channelRoom: ReturnType<typeof readSeedManifest>['rooms']['publicEmpty'];
+		charlieSession: Awaited<ReturnType<typeof createBetterChatSession>>;
+		dmRoom: ReturnType<typeof readSeedManifest>['rooms']['dmCharlie'];
+	};
+	type RoomAlertMenuOption = 'all' | 'mute' | 'personal';
+
+	const prepareForegroundNotificationScenario = async (
+		page: Page,
+		channelRoomKey: 'publicEmpty' | 'publicQuiet' = 'publicEmpty',
+	): Promise<NotificationScenario> => {
 		const manifest = readSeedManifest();
-		const targetRoom = manifest.rooms.publicEmpty;
-		const comparisonRoom = manifest.rooms.dmCharlie;
+		const channelRoom = manifest.rooms[channelRoomKey];
+		const dmRoom = manifest.rooms.dmCharlie;
 		const aliceSession = await createBetterChatSession({
 			login: 'alice',
 			password: 'AlicePass123!',
@@ -1781,86 +1792,211 @@ const liveHistoryProbe = {
 			login: 'bob',
 			password: 'BobPass123!',
 		});
+		const charlieSession = await createBetterChatSession({
+			login: 'charlie',
+			password: 'CharliePass123!',
+		});
 
-		await markConversationRead(aliceSession, targetRoom.roomId);
+		await markConversationRead(aliceSession, channelRoom.roomId);
+		await markConversationRead(aliceSession, dmRoom.roomId);
 		await installNotificationRecorder(page);
 		await loginAsApiUser(page, {
 			login: 'alice',
 			password: 'AlicePass123!',
 		});
+		await page.getByTestId('settings-trigger').click();
+		await page.getByTestId('settings-browser-notifications-foreground').click();
+		await page.getByTestId('settings-close').click();
 
-		await openRoom(page, targetRoom.roomId);
+		return {
+			aliceSession,
+			bobSession,
+			channelRoom,
+			charlieSession,
+			dmRoom,
+		};
+	};
+
+	const setRoomAlertPreference = async ({
+		option,
+		page,
+		roomId,
+	}: {
+		option: RoomAlertMenuOption;
+		page: Page;
+		roomId: string;
+	}) => {
+		await openRoom(page, roomId);
 		await waitForRoomLoadingToFinish(page);
 		await scrollTimelineToBottom(page);
-		await expect(page.getByTestId('room-alert-toggle')).toHaveAttribute('aria-pressed', 'true');
 		await page.getByTestId('room-alert-toggle').click();
-		await expect(page.getByTestId('room-alert-toggle')).toHaveAttribute('aria-pressed', 'false');
+		await page.getByTestId(`room-alert-menu-${option}`).click();
+	};
 
-		await openRoom(page, comparisonRoom.roomId);
+	test('keeps personal-only channels quiet for generic unread activity', async ({ page }) => {
+		const { bobSession, channelRoom, dmRoom } = await prepareForegroundNotificationScenario(page);
+
+		await setRoomAlertPreference({
+			option: 'personal',
+			page,
+			roomId: channelRoom.roomId,
+		});
+
+		await openRoom(page, dmRoom.roomId);
 		await waitForRoomLoadingToFinish(page);
 		await clearRecordedNotifications(page);
 
 		await betterChatPostJson(
 			bobSession,
-			`/api/conversations/${targetRoom.roomId}/messages`,
+			`/api/conversations/${channelRoom.roomId}/messages`,
 			conversationMessageBody({
-				text: `[betterchat][e2e] muted notification ${Date.now()}`,
+				text: `[betterchat][e2e] personal channel generic quiet ${Date.now()}`,
 			}),
 		);
 
+		await expect(page.getByTestId(`sidebar-room-badge-${channelRoom.roomId}`)).toContainText('1');
 		await expect.poll(() => readRecordedNotifications(page)).toEqual([]);
+	});
 
-		await openRoom(page, targetRoom.roomId);
-		await waitForRoomLoadingToFinish(page);
-		await page.getByTestId('room-alert-toggle').click();
-		await expect(page.getByTestId('room-alert-toggle')).toHaveAttribute('aria-pressed', 'true');
-		await scrollTimelineToBottom(page);
+	test('notifies for personal mentions in personal-only channels', async ({ page }) => {
+		const { bobSession, channelRoom, dmRoom } = await prepareForegroundNotificationScenario(page, 'publicQuiet');
 
-		await openRoom(page, comparisonRoom.roomId);
+		await setRoomAlertPreference({
+			option: 'personal',
+			page,
+			roomId: channelRoom.roomId,
+		});
+
+		await openRoom(page, dmRoom.roomId);
 		await waitForRoomLoadingToFinish(page);
 		await clearRecordedNotifications(page);
 
-		const firstText = `[betterchat][e2e] subscribed notification 1 ${Date.now()}`;
-		const secondText = `[betterchat][e2e] subscribed notification 2 ${Date.now()}`;
+		const mentionText = `[betterchat][e2e] personal channel mention ${Date.now()} @alice`;
 		await betterChatPostJson(
 			bobSession,
-			`/api/conversations/${targetRoom.roomId}/messages`,
+			`/api/conversations/${channelRoom.roomId}/messages`,
+			conversationMessageBody({
+				text: mentionText,
+			}),
+		);
+
+		await expect.poll(async () => (await readRecordedNotifications(page)).length).toBe(1);
+		const personalMentionNotification = (await readRecordedNotifications(page))[0];
+		expect(personalMentionNotification?.title).toBe(channelRoom.title);
+		expect(personalMentionNotification?.body).toContain('Bob Example');
+		expect(personalMentionNotification?.body).toContain(mentionText);
+	});
+
+	test('preserves unread truth but suppresses muted room notifications', async ({ page }) => {
+		const { bobSession, channelRoom, dmRoom } = await prepareForegroundNotificationScenario(page);
+
+		await setRoomAlertPreference({
+			option: 'mute',
+			page,
+			roomId: channelRoom.roomId,
+		});
+
+		await openRoom(page, dmRoom.roomId);
+		await waitForRoomLoadingToFinish(page);
+		await clearRecordedNotifications(page);
+
+		await betterChatPostJson(
+			bobSession,
+			`/api/conversations/${channelRoom.roomId}/messages`,
+			conversationMessageBody({
+				text: `[betterchat][e2e] muted mention ${Date.now()} @alice`,
+			}),
+		);
+
+		await expect(page.getByTestId(`sidebar-room-badge-${channelRoom.roomId}`)).toContainText('1');
+		await expect.poll(() => readRecordedNotifications(page)).toEqual([]);
+	});
+
+	test('emits one browser notification per unseen message in all-message channels', async ({ page }) => {
+		const { bobSession, channelRoom, dmRoom } = await prepareForegroundNotificationScenario(page);
+
+		await setRoomAlertPreference({
+			option: 'all',
+			page,
+			roomId: channelRoom.roomId,
+		});
+
+		await openRoom(page, dmRoom.roomId);
+		await waitForRoomLoadingToFinish(page);
+		await clearRecordedNotifications(page);
+
+		const firstText = `[betterchat][e2e] all channel notification 1 ${Date.now()}`;
+		const secondText = `[betterchat][e2e] all channel notification 2 ${Date.now()}`;
+		await betterChatPostJson(
+			bobSession,
+			`/api/conversations/${channelRoom.roomId}/messages`,
 			conversationMessageBody({
 				text: firstText,
 			}),
 		);
 		await betterChatPostJson(
 			bobSession,
-			`/api/conversations/${targetRoom.roomId}/messages`,
+			`/api/conversations/${channelRoom.roomId}/messages`,
 			conversationMessageBody({
 				text: secondText,
 			}),
 		);
 
 		await expect.poll(async () => (await readRecordedNotifications(page)).length).toBe(2);
-		const subscribedNotifications = await readRecordedNotifications(page);
-		expect(subscribedNotifications.map((notification) => notification.title)).toEqual([targetRoom.title, targetRoom.title]);
-		expect(subscribedNotifications[0]?.body).toContain('Bob Example');
-		expect(subscribedNotifications[0]?.body).toContain(firstText);
-		expect(subscribedNotifications[1]?.body).toContain(secondText);
+		const allMessageNotifications = await readRecordedNotifications(page);
+		expect(allMessageNotifications.map((notification) => notification.title)).toEqual([channelRoom.title, channelRoom.title]);
+		expect(allMessageNotifications[0]?.body).toContain('Bob Example');
+		expect(allMessageNotifications[0]?.body).toContain(firstText);
+		expect(allMessageNotifications[1]?.body).toContain(secondText);
+	});
 
-		await clearRecordedNotifications(page);
-		await openRoom(page, targetRoom.roomId);
+	test('notifies for inactive direct messages with the default room policy', async ({ page }) => {
+		const { channelRoom, charlieSession, dmRoom } = await prepareForegroundNotificationScenario(page);
+
+		await openRoom(page, channelRoom.roomId);
 		await waitForRoomLoadingToFinish(page);
 		await scrollTimelineToBottom(page);
+		await clearRecordedNotifications(page);
+		await betterChatPostJson(
+			charlieSession,
+			`/api/conversations/${dmRoom.roomId}/messages`,
+			conversationMessageBody({
+				text: `[betterchat][e2e] dm default notify ${Date.now()}`,
+			}),
+		);
+
+		await expect.poll(async () => (await readRecordedNotifications(page)).length).toBe(1);
+		const dmNotification = (await readRecordedNotifications(page))[0];
+		expect(dmNotification?.title).toBe(dmRoom.title);
+		expect(dmNotification?.body).toContain('Charlie Example');
+	});
+
+	test('keeps the active visible room quiet but still notifies once the page is hidden', async ({ page }) => {
+		const { bobSession, channelRoom } = await prepareForegroundNotificationScenario(page);
+
+		await setRoomAlertPreference({
+			option: 'all',
+			page,
+			roomId: channelRoom.roomId,
+		});
+
+		await clearRecordedNotifications(page);
 		await setRecordedNotificationPageAttention(page, {
 			focused: true,
 			visibilityState: 'visible',
 		});
+		const visibleText = `[betterchat][e2e] active visible quiet ${Date.now()}`;
 
 		await betterChatPostJson(
 			bobSession,
-			`/api/conversations/${targetRoom.roomId}/messages`,
+			`/api/conversations/${channelRoom.roomId}/messages`,
 			conversationMessageBody({
-				text: `[betterchat][e2e] active visible quiet ${Date.now()}`,
+				text: visibleText,
 			}),
 		);
 		await expect.poll(() => readRecordedNotifications(page)).toEqual([]);
+		await expect(page.getByText(visibleText, { exact: true })).toBeVisible();
+		await clearRecordedNotifications(page);
 
 		await setRecordedNotificationPageAttention(page, {
 			focused: false,
@@ -1869,7 +2005,7 @@ const liveHistoryProbe = {
 		const hiddenText = `[betterchat][e2e] active hidden notify ${Date.now()}`;
 		await betterChatPostJson(
 			bobSession,
-			`/api/conversations/${targetRoom.roomId}/messages`,
+			`/api/conversations/${channelRoom.roomId}/messages`,
 			conversationMessageBody({
 				text: hiddenText,
 			}),
@@ -1948,14 +2084,18 @@ const liveHistoryProbe = {
 		await toggle.click();
 		await expect(content).toHaveAttribute('data-collapsed', 'false');
 
-		await timeline.evaluate((node, targetTestId) => {
-			const target = node.querySelector<HTMLElement>(`[data-testid="${targetTestId}"]`);
+		await timeline.evaluate((node, input: { anchorTopBias: number; targetTestId: string }) => {
+			const target = node.querySelector<HTMLElement>(`[data-testid="${input.targetTestId}"]`);
 			if (!target) {
-				throw new Error(`missing target message: ${targetTestId}`);
+				throw new Error(`missing target message: ${input.targetTestId}`);
 			}
 
-			node.scrollTop = Math.max(target.offsetTop + 180, 0);
-		}, `timeline-message-${messageId}`);
+			const anchorWithinTargetPx = 48;
+			node.scrollTop = Math.max(target.offsetTop - input.anchorTopBias + anchorWithinTargetPx, 0);
+		}, {
+			anchorTopBias: TIMELINE_VIEWPORT_ANCHOR_TOP_BIAS,
+			targetTestId: `timeline-message-${messageId}`,
+		});
 
 		const beforeToggle = await readTimelineViewportStateForMessage(timeline, `timeline-message-${messageId}`);
 		expect(beforeToggle.anchorMessageId).toBe(messageId);
@@ -2126,6 +2266,7 @@ const liveHistoryProbe = {
 		await expect(failedMessage.locator('[data-testid^="timeline-message-retry-"]')).toBeVisible();
 		await page.waitForTimeout(1_700);
 		await expect(failedMessage).toBeVisible();
+		resetUnexpectedBrowserErrorGuard(page);
 
 		await failedMessage.locator('[data-testid^="timeline-message-retry-"]').click();
 

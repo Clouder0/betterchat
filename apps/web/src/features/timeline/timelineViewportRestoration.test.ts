@@ -6,6 +6,7 @@ import {
 	normalizePendingContentResizeAdjustment,
 	resolveHistoryPrependRestoreScrollTop,
 	resolveViewportSnapshotScrollTop,
+	shouldDropPendingContentResizeAdjustmentOnManualScroll,
 	type ActiveHistoryPrependRestore,
 	type PendingContentResizeAdjustment,
 } from './timelineViewportRestoration';
@@ -140,6 +141,26 @@ describe('timelineViewportRestoration', () => {
 				nextAdjustment: contentResizeAnchorAdjustment,
 			}),
 		).toEqual(currentBottomAdjustment);
+	});
+
+	it('drops generic anchor adjustments when the user manually scrolls before they apply', () => {
+		expect(shouldDropPendingContentResizeAdjustmentOnManualScroll(contentResizeAnchorAdjustment)).toBe(true);
+		expect(
+			shouldDropPendingContentResizeAdjustmentOnManualScroll({
+				mode: 'anchor',
+				roomId: 'history-archive',
+				snapshot: lockedSnapshot,
+				source: 'history-prepend',
+			}),
+		).toBe(false);
+		expect(
+			shouldDropPendingContentResizeAdjustmentOnManualScroll({
+				mode: 'bottom',
+				roomId: 'history-archive',
+				snapshot: null,
+				source: 'bottom-reflow',
+			}),
+		).toBe(false);
 	});
 
 	it('restores prepended history from the measured scroll-height delta before later reflow refinement', () => {

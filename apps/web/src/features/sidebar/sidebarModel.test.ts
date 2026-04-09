@@ -17,7 +17,7 @@ const baseEntry = (overrides: Partial<RoomSummary>): RoomSummary => ({
 });
 
 describe('buildSidebarGroups', () => {
-	it('groups favorites separately and sorts entries by subscription priority, attention severity, and latest activity within each group', () => {
+	it('groups favorites separately and sorts entries by notification priority, attention severity, and latest activity within each group', () => {
 		const entries: RoomSummary[] = [
 			baseEntry({
 				id: 'general',
@@ -43,7 +43,7 @@ describe('buildSidebarGroups', () => {
 		];
 
 		const groups = buildSidebarGroups(entries, '', {
-			general: 'normal',
+			general: 'mute',
 		});
 
 		expect(groups.map((group) => group.key)).toEqual(['favorites', 'rooms', 'dms']);
@@ -65,51 +65,53 @@ describe('buildSidebarGroups', () => {
 		expect(groups[0]?.entries.map((entry) => entry.id)).toEqual(['handoff']);
 	});
 
-	it('sorts by subscription priority first, then attention severity, then latest activity', () => {
+	it('sorts by notification priority first, then attention severity, then latest activity', () => {
 		const entries: RoomSummary[] = [
 			baseEntry({
-				id: 'subscribed-mentioned',
-				title: '订阅提及',
+				id: 'all-mentioned',
+				title: '所有消息提及',
 				attention: { level: 'mention', badgeCount: 1 },
 				lastActivityAt: '2026-03-25T09:10:00.000Z',
 			}),
 			baseEntry({
-				id: 'normal-newest',
-				title: '普通最新',
+				id: 'mute-newest',
+				title: '静音最新',
 				attention: { level: 'unread', badgeCount: 9 },
 				lastActivityAt: '2026-03-25T09:40:00.000Z',
 			}),
 			baseEntry({
-				id: 'subscribed-newer',
-				title: '订阅较新',
+				id: 'all-newer',
+				title: '所有消息较新',
 				attention: { level: 'activity' },
 				lastActivityAt: '2026-03-25T09:30:00.000Z',
 			}),
 			baseEntry({
-				id: 'subscribed-older',
-				title: '订阅较早',
+				id: 'all-older',
+				title: '所有消息较早',
 				attention: { level: 'unread', badgeCount: 4 },
 				lastActivityAt: '2026-03-25T09:20:00.000Z',
 			}),
 			baseEntry({
-				id: 'normal-mentioned',
-				title: '普通提及',
+				id: 'personal-mentioned',
+				title: '个人相关提及',
 				attention: { level: 'mention', badgeCount: 2 },
 				lastActivityAt: '2026-03-25T09:25:00.000Z',
 			}),
 		];
 
 		const groups = buildSidebarGroups(entries, '', {
-			'normal-newest': 'normal',
-			'normal-mentioned': 'normal',
+			'all-mentioned': 'all',
+			'all-newer': 'all',
+			'all-older': 'all',
+			'mute-newest': 'mute',
 		});
 
 		expect(groups[0]?.entries.map((entry) => entry.id)).toEqual([
-			'subscribed-mentioned',
-			'subscribed-older',
-			'subscribed-newer',
-			'normal-mentioned',
-			'normal-newest',
+			'all-mentioned',
+			'all-older',
+			'all-newer',
+			'personal-mentioned',
+			'mute-newest',
 		]);
 	});
 });

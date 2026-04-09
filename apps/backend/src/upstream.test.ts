@@ -780,7 +780,7 @@ describe('RocketChat upstream transport', () => {
     expect(observedPath).toBe('/api/v1/im.members?roomId=dm-1&count=10&offset=0');
   });
 
-  test('serializes room media confirmation with optional quote, thread targeting, and broadcast control', async () => {
+  test('serializes room media confirmation with optional submission id, quote, thread targeting, and broadcast control', async () => {
     const requestBodies: unknown[] = [];
 
     const server = await listen(async (request, response) => {

@@ -366,13 +366,19 @@ export const betterChatApi = {
 						TIMEOUTS.sendMessage,
 					),
 			  ),
-	uploadImage: async (roomId: string, request: { file: File; text?: string }): Promise<SendMessageResponse> => {
+	uploadImage: async (
+		roomId: string,
+		request: { file: File; submissionId?: string; text?: string },
+	): Promise<SendMessageResponse> => {
 		if (useFixtureMode) {
 			return runFixture(async () => toSendMessageResponse(await fixtureBetterChatService.uploadConversationMedia(roomId, request)));
 		}
 
 		const formData = new FormData();
 		formData.set('file', request.file, request.file.name);
+		if (request.submissionId) {
+			formData.set('submissionId', request.submissionId);
+		}
 		if (request.text) {
 			formData.set('text', request.text);
 		}

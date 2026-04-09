@@ -27,6 +27,7 @@ const createMessage = (overrides: Partial<TimelineMessage> & Pick<TimelineMessag
 	thread: overrides.thread,
 	attachments: overrides.attachments,
 	reactions: overrides.reactions,
+	submissionId: overrides.submissionId,
 	updatedAt: overrides.updatedAt,
 });
 
@@ -62,6 +63,19 @@ describe('mergeTimelineMessages', () => {
 		const contextMessages = [createMessage({ id: 'message-1', body: { rawMarkdown: 'newer copy' } })];
 
 		expect(mergeTimelineMessagesPreferIncoming(currentMessages, contextMessages)[0]?.body.rawMarkdown).toBe('newer copy');
+	});
+
+	it('preserves BetterChat submission identity when polling refreshes the same canonical message id', () => {
+		const currentMessages = [createMessage({ id: 'message-1', submissionId: 'submission-1' })];
+		const contextMessages = [createMessage({ id: 'message-1', body: { rawMarkdown: 'server copy' } })];
+
+		expect(mergeTimelineMessagesPreferIncoming(currentMessages, contextMessages)[0]).toMatchObject({
+			body: {
+				rawMarkdown: 'server copy',
+			},
+			id: 'message-1',
+			submissionId: 'submission-1',
+		});
 	});
 });
 

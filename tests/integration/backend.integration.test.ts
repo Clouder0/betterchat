@@ -277,6 +277,7 @@ const imageFormData = (
   options?: {
     targetKind?: 'conversation' | 'thread';
     replyToMessageId?: string;
+    submissionId?: string;
     threadId?: string;
     echoToConversation?: boolean;
   },
@@ -285,6 +286,9 @@ const imageFormData = (
   formData.set('file', new File([Buffer.from(imageFixture.bytes)], imageFixture.fileName, { type: imageFixture.contentType }));
   if (caption) {
     formData.set('text', caption);
+  }
+  if (options?.submissionId) {
+    formData.set('submissionId', options.submissionId);
   }
 
   if (options?.targetKind === 'thread') {
@@ -1159,15 +1163,20 @@ describe('BetterChat backend integration', () => {
     const parentMessageId = messageByKey('publicWelcome').messageId!;
     const threadRootId = messageByKey('publicThreadParent').messageId!;
     const conversationCaption = `[betterchat] canonical image ${Date.now()}`;
+    const conversationSubmissionId = `betterchat-image-submission-${Date.now()}`;
     const quotedConversationCaption = `[betterchat] canonical quoted image ${Date.now()}`;
     const threadCaption = `[betterchat] canonical thread image ${Date.now()}`;
 
     const uploadedConversation = await client.postForm<CreateConversationMessageResponse>(
       `/api/conversations/${conversationId}/media`,
-      imageFormData(conversationCaption),
+      imageFormData(conversationCaption, {
+        submissionId: conversationSubmissionId,
+      }),
     );
     const conversationAttachment = uploadedConversation.message.attachments?.[0];
     expect(conversationAttachment?.kind).toBe('image');
+    expect(uploadedConversation.message.id).not.toBe(conversationSubmissionId);
+    expect(uploadedConversation.message.submissionId).toBe(conversationSubmissionId);
     expect(uploadedConversation.message.content.text).toBe(conversationCaption);
     expect(conversationAttachment?.preview.url).toBeDefined();
     expect(conversationAttachment?.source.url).toBeDefined();

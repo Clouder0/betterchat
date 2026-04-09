@@ -36,6 +36,7 @@ type SeedManifest = {
 		privateMain: SeedManifestRoom;
 		publicEmpty: SeedManifestRoom;
 		publicMain: SeedManifestRoom;
+		publicQuiet: SeedManifestRoom;
 		publicReadonly: SeedManifestRoom;
 	};
 	users: Record<string, SeedManifestUser> & {

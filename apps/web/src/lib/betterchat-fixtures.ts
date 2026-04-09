@@ -1949,7 +1949,7 @@ export const fixtureBetterChatService = {
 	},
 	uploadConversationMedia: async (
 		conversationId: string,
-		request: { file: File; text?: string },
+		request: { file: File; submissionId?: string; text?: string },
 	): Promise<CreateConversationMessageResponse> => {
 		const currentUser = requireFixtureSessionUser();
 		const record = requireFixtureConversationRecord(conversationId);
@@ -1979,7 +1979,8 @@ export const fixtureBetterChatService = {
 		const createdAt = createNextFixtureMessageTimestamp(record.timeline);
 		const uploadedImageUrl = createFixtureObjectUrl(request.file);
 		const message: ConversationMessage = {
-			id: createMessageId(conversationId),
+			id: request.submissionId ?? createMessageId(conversationId),
+			...(request.submissionId ? { submissionId: request.submissionId } : {}),
 			conversationId,
 			authoredAt: createdAt,
 			author: createFixtureAuthor(currentUser),

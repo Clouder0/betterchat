@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test';
 import { act, cleanup, fireEvent, waitFor } from '@testing-library/react';
 
 import type { WorkspaceBootstrap } from '@betterchat/contracts';
+import type { HTMLAttributes, ReactNode } from 'react';
+import { BROWSER_NOTIFICATION_DELIVERY_STORAGE_KEY } from '@/features/notifications/notificationPreferences';
 import type { RoomListSnapshot, RoomSnapshot, RoomTimelineSnapshot } from '@/lib/chatModels';
 import { installTestDom, type TestDomHarness } from '@/test/domHarness';
 import { getByTestId } from '@/test/domQueries';
@@ -24,8 +26,22 @@ const mockRoomParticipants = mock(async () => ({
 	entries: [],
 }));
 const mockLogout = mock(async () => {});
+const mockSetRoomFavorite = mock(async (_roomId: string, { favorite }: { favorite: boolean }) => ({
+	favorite,
+	roomId: roomState.room.id,
+	sync: {},
+}));
+const mockUploadImage = mock(async () => ({
+	message: timelineState.messages[0]!,
+}));
 const mockRealtimeClose = mock(() => {});
 const mockRealtimeSetWatchState = mock(() => {});
+let apiModeState: 'api' | 'fixture' = 'fixture';
+let lastRealtimeOptions:
+	| {
+			onSocketError?: (error: { category: string; message: string; timestamp: number }) => void;
+	  }
+	| undefined;
 
 let workspaceState: WorkspaceBootstrap;
 let workspaceError: unknown = null;
@@ -33,6 +49,16 @@ let roomListState: RoomListSnapshot;
 let roomState: RoomSnapshot;
 let timelineState: RoomTimelineSnapshot;
 let appShellImportNonce = 0;
+
+const createDeferred = <T,>() => {
+	let resolve!: (value: T | PromiseLike<T>) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+		resolve = resolvePromise;
+		reject = rejectPromise;
+	});
+	return { promise, reject, resolve };
+};
 
 const loadAppShell = async () => {
 	mock.restore();
@@ -66,7 +92,7 @@ const loadAppShell = async () => {
 				user: { displayName: 'Alice Example', id: 'user-alice', username: 'alice' },
 			})),
 			logout: mockLogout,
-			mode: 'fixture',
+			mode: apiModeState,
 			room: mockRoom,
 			roomList: mockRoomList,
 			roomMentionCandidates: mock(async () => ({
@@ -88,11 +114,7 @@ const loadAppShell = async () => {
 			sendMessage: mock(async () => ({
 				message: timelineState.messages[0]!,
 			})),
-			setRoomFavorite: mock(async () => ({
-				favorite: true,
-				roomId: roomState.room.id,
-				sync: {},
-			})),
+			setRoomFavorite: mockSetRoomFavorite,
 			setRoomReadState: mock(async () => ({
 				roomId: roomState.room.id,
 				sync: {},
@@ -102,9 +124,7 @@ const loadAppShell = async () => {
 				sync: {},
 				visibility: 'visible',
 			})),
-			uploadImage: mock(async () => ({
-				message: timelineState.messages[0]!,
-			})),
+			uploadImage: mockUploadImage,
 			workspace: mockWorkspace,
 		},
 		betterChatQueryKeys: {
@@ -122,15 +142,38 @@ const loadAppShell = async () => {
 	}));
 
 	mock.module('@/lib/betterchat-realtime', () => ({
-		createBetterChatRealtimeController: () => ({
-			close: mockRealtimeClose,
-			setWatchState: mockRealtimeSetWatchState,
-		}),
+		createBetterChatRealtimeController: (options: typeof lastRealtimeOptions) => {
+			lastRealtimeOptions = options;
+			return {
+				close: mockRealtimeClose,
+				setWatchState: mockRealtimeSetWatchState,
+			};
+		},
 	}));
 
 	mock.module('@/features/composer/loadLiveMarkdownEditor', () => ({
 		loadLiveMarkdownEditor: () => new Promise(() => {}),
 		preloadLiveMarkdownEditor: () => {},
+	}));
+	mock.module('@radix-ui/react-dialog', () => ({
+		Root: ({ children }: { children: ReactNode }) => <>{children}</>,
+		Trigger: ({ asChild, children }: { asChild?: boolean; children: ReactNode }) =>
+			asChild ? children : <button type='button'>{children}</button>,
+		Portal: ({ children }: { children: ReactNode }) => <>{children}</>,
+		Overlay: (props: HTMLAttributes<HTMLDivElement>) => <div {...props} />,
+		Content: ({
+			onCloseAutoFocus: _onCloseAutoFocus,
+			onEscapeKeyDown: _onEscapeKeyDown,
+			onFocusOutside: _onFocusOutside,
+			onInteractOutside: _onInteractOutside,
+			onOpenAutoFocus: _onOpenAutoFocus,
+			onPointerDownOutside: _onPointerDownOutside,
+			...props
+		}: HTMLAttributes<HTMLDivElement> & Record<string, unknown>) => <div {...props} />,
+		Title: (props: HTMLAttributes<HTMLHeadingElement>) => <h2 {...props} />,
+		Description: (props: HTMLAttributes<HTMLParagraphElement>) => <p {...props} />,
+		Close: ({ asChild, children }: { asChild?: boolean; children: ReactNode }) =>
+			asChild ? children : <button type='button'>{children}</button>,
 	}));
 
 	const module = await import(`./AppShell.tsx?app-shell-test=${appShellImportNonce++}`);
@@ -241,8 +284,15 @@ describe('AppShell component contracts', () => {
 		mockRoomTimeline.mockClear();
 		mockRoomParticipants.mockClear();
 		mockLogout.mockClear();
+		mockSetRoomFavorite.mockClear();
+		mockUploadImage.mockClear();
+		mockUploadImage.mockImplementation(async () => ({
+			message: timelineState.messages[0]!,
+		}));
 		mockRealtimeClose.mockClear();
 		mockRealtimeSetWatchState.mockClear();
+		apiModeState = 'fixture';
+		lastRealtimeOptions = undefined;
 		AppShell = await loadAppShell();
 	});
 
@@ -269,6 +319,85 @@ describe('AppShell component contracts', () => {
 		});
 
 		renderWithAppProviders(<AppShell roomId='room-ops' />);
+
+		await waitFor(() =>
+			expect(mockNavigate).toHaveBeenCalledWith({
+				replace: true,
+				to: '/login',
+			}),
+		);
+	});
+
+	it('suppresses console errors for recoverable websocket interruptions', async () => {
+		dom = installTestDom();
+		apiModeState = 'api';
+		workspaceState = {
+			...workspaceState,
+			capabilities: {
+				...workspaceState.capabilities,
+				realtimeEnabled: true,
+			},
+		};
+		AppShell = await loadAppShell();
+		const consoleError = mock(() => {});
+		const originalConsoleError = console.error;
+		console.error = consoleError;
+
+		try {
+			renderWithAppProviders(<AppShell roomId='room-ops' />);
+			await waitFor(() => expect(lastRealtimeOptions?.onSocketError).toBeTruthy());
+
+			act(() => {
+				lastRealtimeOptions?.onSocketError?.({
+					category: 'connection-lost',
+					message: 'socket reconnecting',
+					timestamp: Date.now(),
+				});
+			});
+
+			expect(consoleError).not.toHaveBeenCalled();
+		} finally {
+			console.error = originalConsoleError;
+		}
+	});
+
+	it('quiesces realtime immediately when logout begins in API mode', async () => {
+		dom = installTestDom();
+		apiModeState = 'api';
+		workspaceState = {
+			...workspaceState,
+			capabilities: {
+				...workspaceState.capabilities,
+				realtimeEnabled: true,
+			},
+		};
+		let resolveLogout: (() => void) | null = null;
+		mockLogout.mockImplementation(
+			() =>
+				new Promise<void>((resolve) => {
+					resolveLogout = resolve;
+				}),
+		);
+		AppShell = await loadAppShell();
+
+		const { container } = renderWithAppProviders(<AppShell roomId='room-ops' />);
+		await waitFor(() => expect(getByTestId(container, 'settings-trigger')).toBeTruthy());
+
+		await act(async () => {
+			fireEvent.click(getByTestId(container, 'settings-trigger'));
+		});
+		await waitFor(() => expect(getByTestId(document, 'settings-panel')).toBeTruthy());
+		await act(async () => {
+			fireEvent.click(getByTestId(document, 'settings-logout'));
+		});
+
+		await waitFor(() => expect(mockRealtimeClose.mock.calls.length).toBeGreaterThanOrEqual(1));
+		expect(mockNavigate).not.toHaveBeenCalled();
+
+		await act(async () => {
+			resolveLogout?.();
+			await Promise.resolve();
+		});
 
 		await waitFor(() =>
 			expect(mockNavigate).toHaveBeenCalledWith({
@@ -444,6 +573,113 @@ describe('AppShell component contracts', () => {
 
 		await waitFor(() => expect(sidebar.getAttribute('data-collapsed')).toBe('true'));
 		await waitFor(() => expect(window.localStorage.getItem('betterchat.sidebar-collapsed.v1')).toBe(JSON.stringify(true)));
+	});
+
+	it('keeps a retried image upload expanded when the canonical message replaces the failed local submission', async () => {
+		dom = installTestDom();
+		timelineState = {
+			...createTimelineState(),
+			messages: [],
+		};
+		let uploadAttempt = 0;
+		mockUploadImage.mockImplementation(async (_roomId: string, request: { file: File; submissionId?: string; text?: string }) => {
+			uploadAttempt += 1;
+			if (uploadAttempt === 1) {
+				throw new Error('图片发送失败，请重试。');
+			}
+
+			return {
+				message: {
+					actions: {
+						delete: true,
+						edit: true,
+					},
+					attachments: [
+						{
+							id: 'attachment-canonical-image',
+							kind: 'image',
+							preview: {
+								url: '/api/media/file-upload/upload-thumb.png',
+							},
+							source: {
+								url: '/api/media/file-upload/upload.png',
+							},
+							title: request.file.name,
+						},
+					],
+					author: {
+						displayName: workspaceState.currentUser.displayName,
+						id: workspaceState.currentUser.id,
+						username: workspaceState.currentUser.username,
+					},
+					body: {
+						rawMarkdown: request.text ?? '',
+					},
+					createdAt: '2026-04-09T12:00:00.000Z',
+					flags: {
+						deleted: false,
+						edited: false,
+					},
+					id: 'message-canonical-image',
+					roomId: 'room-ops',
+					submissionId: request.submissionId,
+				},
+			};
+		});
+
+		const { container } = renderWithAppProviders(<AppShell roomId='room-ops' />);
+		await waitFor(() => expect(getByTestId(container, 'composer-textarea')).toBeTruthy());
+
+		const composerImageInput = getByTestId(container, 'composer-image-input') as HTMLInputElement;
+		const composerTextarea = getByTestId(container, 'composer-textarea') as HTMLTextAreaElement;
+		const composerSend = getByTestId(container, 'composer-send');
+		const uploadFile = new File(
+			[
+				Uint8Array.from([
+					0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+					0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c,
+					0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00,
+					0x03, 0x03, 0x01, 0xff, 0xa5, 0x9f, 0x81, 0x89, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+					0xae, 0x42, 0x60, 0x82,
+				]),
+			],
+			'betterchat-e2e-upload.png',
+			{ type: 'image/png' },
+		);
+
+		await act(async () => {
+			fireEvent.change(composerImageInput, {
+				target: {
+					files: [uploadFile],
+				},
+			});
+		});
+		await act(async () => {
+			fireEvent.change(composerTextarea, {
+				target: {
+					value: 'Retry image upload',
+				},
+			});
+		});
+		await act(async () => {
+			fireEvent.click(composerSend);
+		});
+
+		const failedMessage = () => container.querySelector<HTMLElement>('article[data-delivery-state="failed"]');
+		await waitFor(() => expect(failedMessage()).toBeTruthy());
+		const failedMessageId = failedMessage()?.getAttribute('data-message-id');
+		expect(failedMessageId).toBeTruthy();
+		if (!failedMessageId) {
+			throw new Error('expected failed optimistic image message id');
+		}
+
+		await act(async () => {
+			fireEvent.click(getByTestId(container, `timeline-message-retry-${failedMessageId}`));
+		});
+
+		await waitFor(() =>
+			expect(getByTestId(container, 'timeline-message-content-message-canonical-image').getAttribute('data-collapsed')).toBe('false'),
+		);
 	});
 
 	it('renders the attention dock outside the scrollable sidebar body and excludes the active room', async () => {
@@ -624,7 +860,7 @@ describe('AppShell component contracts', () => {
 				{
 					attention: {
 						badgeCount: 1,
-						level: 'unread',
+						level: 'mention',
 					},
 					favorite: false,
 					id: 'room-quiet',
@@ -659,5 +895,280 @@ describe('AppShell component contracts', () => {
 
 		await waitFor(() => expect(getByTestId(container, 'sidebar-attention-dock-item-room-quiet')).toBeTruthy());
 		expect(sidebarBody.scrollTop).toBe(0);
+	});
+
+	it('keeps inactive-room browser notifications alive across sidebar rerenders while the timeline fetch is in flight', async () => {
+		dom = installTestDom({
+			localStorageSeed: {
+				[BROWSER_NOTIFICATION_DELIVERY_STORAGE_KEY]: 'foreground',
+			},
+			notificationPermission: 'granted',
+		});
+		roomListState = {
+			rooms: [
+				{
+					attention: {
+						level: 'none',
+					},
+					favorite: false,
+					id: 'room-ops',
+					kind: 'channel',
+					subtitle: 'Operations room',
+					title: 'Ops room',
+					visibility: 'visible',
+				},
+				{
+					attention: {
+						level: 'none',
+					},
+					favorite: false,
+					id: 'room-quiet',
+					kind: 'channel',
+					subtitle: 'Quiet room',
+					title: 'Quiet room',
+					visibility: 'visible',
+				},
+			],
+			version: 'room-list-v1',
+		};
+
+		const recordedNotifications: Array<{ body?: string; tag?: string; title: string }> = [];
+		class RecordingNotification {
+			static permission: NotificationPermission = 'granted';
+
+			static async requestPermission(): Promise<NotificationPermission> {
+				return 'granted';
+			}
+
+			onclick: ((this: Notification, ev: Event) => unknown) | null = null;
+
+			close() {}
+
+			constructor(title: string, options?: NotificationOptions) {
+				recordedNotifications.push({
+					body: options?.body,
+					tag: options?.tag,
+					title,
+				});
+			}
+		}
+
+		Object.defineProperty(window, 'Notification', {
+			configurable: true,
+			value: RecordingNotification,
+		});
+		Object.defineProperty(globalThis, 'Notification', {
+			configurable: true,
+			value: RecordingNotification,
+		});
+
+		let resolveQuietTimeline: ((value: RoomTimelineSnapshot) => void) | null = null;
+		const quietTimelinePromise = new Promise<RoomTimelineSnapshot>((resolve) => {
+			resolveQuietTimeline = resolve;
+		});
+		mockRoomTimeline.mockImplementation(async (targetRoomId: string) => {
+			if (targetRoomId === 'room-quiet') {
+				return quietTimelinePromise;
+			}
+
+			return timelineState;
+		});
+
+		const { container, queryClient } = renderWithAppProviders(<AppShell roomId='room-ops' />);
+		await waitFor(() => expect(getByTestId(container, 'sidebar-room-room-quiet')).toBeTruthy());
+
+		await act(async () => {
+			queryClient.setQueryData<RoomListSnapshot>(['room-list'], {
+				rooms: [
+					{
+						attention: {
+							level: 'none',
+						},
+						favorite: false,
+						id: 'room-ops',
+						kind: 'channel',
+						subtitle: 'Operations room',
+						title: 'Ops room',
+						visibility: 'visible',
+					},
+					{
+						attention: {
+							badgeCount: 1,
+							level: 'mention',
+						},
+						favorite: false,
+						id: 'room-quiet',
+						kind: 'channel',
+						subtitle: 'Quiet room',
+						title: 'Quiet room',
+						visibility: 'visible',
+					},
+				],
+				version: 'room-list-v2',
+			});
+		});
+
+		await waitFor(() =>
+			expect(
+				mockRoomTimeline.mock.calls.some(([targetRoomId]) => targetRoomId === 'room-quiet'),
+			).toBe(true),
+		);
+
+		await act(async () => {
+			queryClient.setQueryData<RoomListSnapshot>(['room-list'], {
+				rooms: [
+					{
+						attention: {
+							level: 'none',
+						},
+						favorite: false,
+						id: 'room-ops',
+						kind: 'channel',
+						subtitle: 'Operations room',
+						title: 'Ops room',
+						visibility: 'visible',
+					},
+					{
+						attention: {
+							badgeCount: 1,
+							level: 'mention',
+						},
+						favorite: false,
+						id: 'room-quiet',
+						kind: 'channel',
+						subtitle: 'Quiet room',
+						title: 'Quiet room',
+						visibility: 'visible',
+					},
+				],
+				version: 'room-list-v3',
+			});
+		});
+
+		await act(async () => {
+			resolveQuietTimeline?.({
+				messages: [
+					{
+						actions: {
+							delete: true,
+							edit: true,
+						},
+						author: {
+							displayName: 'Alice Example',
+							id: 'user-alice',
+							username: 'alice',
+						},
+						body: {
+							rawMarkdown: '@self urgent quiet mention',
+						},
+						createdAt: '2026-04-09T09:00:00.000Z',
+						flags: {
+							deleted: false,
+							edited: false,
+						},
+						id: 'quiet-message-1',
+						roomId: 'room-quiet',
+					},
+				],
+				roomId: 'room-quiet',
+				version: 'timeline-quiet-v1',
+			});
+			await Promise.resolve();
+		});
+
+		await waitFor(() => expect(recordedNotifications).toHaveLength(1));
+		expect(recordedNotifications[0]?.title).toBe('Quiet room');
+		expect(recordedNotifications[0]?.body).toContain('Alice Example');
+		expect(recordedNotifications[0]?.body).toContain('@self urgent quiet mention');
+	});
+
+	it('queues a second favorite toggle instead of dropping it while the first mutation is still in flight', async () => {
+		dom = installTestDom();
+		apiModeState = 'api';
+		AppShell = await loadAppShell();
+		const firstFavoriteMutation = createDeferred<{ favorite: boolean; roomId: string; sync: {} }>();
+		const secondFavoriteMutation = createDeferred<{ favorite: boolean; roomId: string; sync: {} }>();
+
+		mockSetRoomFavorite.mockImplementationOnce(async (_roomId: string, { favorite }: { favorite: boolean }) => {
+			roomListState = {
+				...roomListState,
+				rooms: roomListState.rooms.map((room) => (room.id === roomState.room.id ? { ...room, favorite } : room)),
+			};
+			roomState = {
+				...roomState,
+				room: {
+					...roomState.room,
+					favorite,
+				},
+			};
+			return firstFavoriteMutation.promise;
+		});
+		mockSetRoomFavorite.mockImplementationOnce(async (_roomId: string, { favorite }: { favorite: boolean }) => {
+			roomListState = {
+				...roomListState,
+				rooms: roomListState.rooms.map((room) => (room.id === roomState.room.id ? { ...room, favorite } : room)),
+			};
+			roomState = {
+				...roomState,
+				room: {
+					...roomState.room,
+					favorite,
+				},
+			};
+			return secondFavoriteMutation.promise;
+		});
+
+		const { container, queryClient } = renderWithAppProviders(<AppShell roomId='room-ops' />);
+		await waitFor(() => expect(getByTestId(container, 'room-favorite-toggle')).toBeTruthy());
+
+		const favoriteToggle = getByTestId(container, 'room-favorite-toggle');
+		act(() => {
+			favoriteToggle.focus();
+		});
+		expect(document.activeElement).toBe(favoriteToggle);
+		expect(favoriteToggle.getAttribute('aria-pressed')).toBe('false');
+
+		await act(async () => {
+			fireEvent.click(favoriteToggle);
+		});
+
+		await waitFor(() => expect(mockSetRoomFavorite).toHaveBeenCalledTimes(1));
+		expect(favoriteToggle.getAttribute('aria-pressed')).toBe('true');
+
+		await act(async () => {
+			fireEvent.click(favoriteToggle);
+		});
+
+		expect(mockSetRoomFavorite).toHaveBeenCalledTimes(1);
+		expect(document.activeElement).toBe(favoriteToggle);
+
+		await act(async () => {
+			firstFavoriteMutation.resolve({
+				favorite: true,
+				roomId: 'room-ops',
+				sync: {},
+			});
+			await firstFavoriteMutation.promise;
+		});
+
+		await waitFor(() => expect(mockSetRoomFavorite).toHaveBeenCalledTimes(2));
+		expect(mockSetRoomFavorite.mock.calls[1]).toEqual([
+			'room-ops',
+			{
+				favorite: false,
+			},
+		]);
+
+		await act(async () => {
+			secondFavoriteMutation.resolve({
+				favorite: false,
+				roomId: 'room-ops',
+				sync: {},
+			});
+			await secondFavoriteMutation.promise;
+		});
+
+		await waitFor(() => expect(favoriteToggle.getAttribute('aria-pressed')).toBe('false'));
+		expect(document.activeElement).toBe(favoriteToggle);
 	});
 });

@@ -110,6 +110,20 @@ const parseUploadTarget = (
   throw new AppError('VALIDATION_ERROR', '"targetKind" must be "conversation" or "thread"', 400);
 };
 
+const parseUploadSubmissionId = (fields: Map<string, string>): string | undefined => {
+  const rawSubmissionId = fields.get('submissionId');
+  if (rawSubmissionId === undefined) {
+    return undefined;
+  }
+
+  const submissionId = rawSubmissionId.trim();
+  if (submissionId.length === 0) {
+    throw new AppError('VALIDATION_ERROR', '"submissionId" must be a non-empty string when provided', 400);
+  }
+
+  return submissionId;
+};
+
 const capabilitiesFromAuthorizationContext = (
   context: Awaited<ReturnType<typeof loadConversationAuthorizationContext>>,
 ) =>
@@ -538,6 +552,7 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
 
       try {
         const target = parseUploadTarget(upload.fields);
+        const submissionId = parseUploadSubmissionId(upload.fields);
         let quoteMessageLink: string | undefined;
         let parentMessageId: string | undefined;
 
@@ -606,7 +621,12 @@ export const installConversationRoutes = (app: Hono, services: AppServices): voi
         return c.json({
           ok: true,
           data: {
-            message: normalizeConversationMessage(config.upstreamUrl, confirmed.message, parentMessages, authorizationContext),
+            message: submissionId
+              ? {
+                  ...normalizeConversationMessage(config.upstreamUrl, confirmed.message, parentMessages, authorizationContext),
+                  submissionId,
+                }
+              : normalizeConversationMessage(config.upstreamUrl, confirmed.message, parentMessages, authorizationContext),
           },
         });
       } finally {

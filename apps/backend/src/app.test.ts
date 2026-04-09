@@ -10,7 +10,7 @@ import { requestIdHeaderName, type BetterChatLogger } from './observability';
 import { serializeSessionCookie, type UpstreamSession } from './session';
 import type { SnapshotService } from './snapshot-service';
 import { conversationCapabilitiesFixture, emptyMembershipInbox } from './test-fixtures';
-import type { RocketChatClient, UpstreamMessage } from './upstream';
+import type { RocketChatClient, UpstreamConfirmRoomMediaInput, UpstreamMessage } from './upstream';
 
 const testConfig: BetterChatConfig = {
   host: '127.0.0.1',
@@ -979,6 +979,99 @@ describe('createApp image upload validation', () => {
               },
             },
           ],
+        },
+      },
+    });
+  });
+
+  test('propagates submission ids into room image uploads and echoes them in the canonical response', async () => {
+    let confirmCalls = 0;
+
+    const app = createApp(testConfig, {
+      client: createStubClient({
+        getSubscription: async () => ({
+          success: true,
+          subscription: {
+            _id: 'subscription-1',
+            rid: 'room-1',
+            t: 'c',
+            name: 'room-1',
+            open: true,
+            unread: 0,
+          },
+        }),
+        uploadRoomMedia: async () => ({
+          success: true,
+          file: {
+            _id: 'file-1',
+            url: '/file-upload/file-1/upload.png',
+          },
+        }),
+        confirmRoomMedia: async (_session: UpstreamSession, input: UpstreamConfirmRoomMediaInput) => {
+          confirmCalls += 1;
+          return {
+            success: true,
+            message: {
+              _id: 'message-1',
+              rid: 'room-1',
+              msg: 'caption',
+              ts: '2026-03-25T00:00:00.000Z',
+              u: {
+                _id: 'alice-id',
+                username: 'alice',
+                name: 'Alice Example',
+              },
+              attachments: [
+                {
+                  title: 'upload.png',
+                  title_link: '/file-upload/file-1/upload.png',
+                  image_url: '/file-upload/thumb-1/upload.png',
+                  image_type: 'image/png',
+                },
+              ],
+              file: {
+                _id: 'file-1',
+                name: 'upload.png',
+                type: 'image/png',
+              },
+              files: [
+                {
+                  _id: 'file-1',
+                  name: 'upload.png',
+                  type: 'image/png',
+                },
+                {
+                  _id: 'thumb-1',
+                  name: 'upload.png',
+                  type: 'image/png',
+                },
+              ],
+            },
+          };
+        },
+      }),
+      logger: silentLogger,
+      snapshotService: createStubSnapshotService(),
+    });
+
+    const response = await app.fetch(new Request('http://betterchat.test/api/conversations/room-1/media', {
+      method: 'POST',
+      headers: {
+        cookie: sessionCookie(),
+      },
+      body: createImageUploadFormData(1024, {
+        submissionId: 'submission-image-1',
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(confirmCalls).toBe(1);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      data: {
+        message: {
+          id: 'message-1',
+          submissionId: 'submission-image-1',
         },
       },
     });

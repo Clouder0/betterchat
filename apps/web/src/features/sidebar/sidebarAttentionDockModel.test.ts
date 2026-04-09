@@ -60,34 +60,83 @@ describe('buildSidebarAttentionDock', () => {
 			],
 			{
 				activeRoomId: 'active-mentioned',
+				notificationDefaults: {
+					dms: 'all',
+					rooms: 'all',
+				},
+				notificationPreferences: {
+					'activity-room': 'mute',
+				},
 			},
 		);
 
-		expect(state.entries.map((entry) => entry.id)).toEqual(['mention-room', 'unread-room', 'activity-room']);
+		expect(state.entries.map((entry) => entry.id)).toEqual(['mention-room', 'unread-room']);
 		expect(state.overflowCount).toBe(0);
 	});
 
+	it('keeps personal-only DMs and mentions, but excludes generic unread channels from the dock', () => {
+		const state = buildSidebarAttentionDock(
+			[
+				baseEntry({
+					id: 'dm-alice',
+					kind: 'dm',
+					title: 'Alice',
+					attention: { badgeCount: 1, level: 'unread' },
+					lastActivityAt: '2026-04-09T10:00:00.000Z',
+				}),
+				baseEntry({
+					id: 'channel-mention',
+					title: '提及房间',
+					attention: { badgeCount: 1, level: 'mention' },
+					lastActivityAt: '2026-04-09T09:00:00.000Z',
+				}),
+				baseEntry({
+					id: 'channel-unread',
+					title: '普通未读',
+					attention: { badgeCount: 5, level: 'unread' },
+					lastActivityAt: '2026-04-09T11:00:00.000Z',
+				}),
+			],
+			{
+				notificationPreferences: {
+					'dm-alice': 'personal',
+					'channel-mention': 'personal',
+				},
+			},
+		);
+
+		expect(state.entries.map((entry) => entry.id)).toEqual(['channel-mention', 'dm-alice']);
+	});
+
 	it('breaks ties by latest activity and then by locale title for deterministic ordering', () => {
-		const state = buildSidebarAttentionDock([
-			baseEntry({
-				id: 'zebra',
-				title: '张三',
-				attention: { badgeCount: 1, level: 'unread' },
-				lastActivityAt: '2026-04-09T09:00:00.000Z',
-			}),
-			baseEntry({
-				id: 'alpha',
-				title: '阿尔法',
-				attention: { badgeCount: 1, level: 'unread' },
-				lastActivityAt: '2026-04-09T09:00:00.000Z',
-			}),
-			baseEntry({
-				id: 'newer',
-				title: '较新未读',
-				attention: { badgeCount: 1, level: 'unread' },
-				lastActivityAt: '2026-04-09T10:00:00.000Z',
-			}),
-		]);
+		const state = buildSidebarAttentionDock(
+			[
+				baseEntry({
+					id: 'zebra',
+					title: '张三',
+					attention: { badgeCount: 1, level: 'unread' },
+					lastActivityAt: '2026-04-09T09:00:00.000Z',
+				}),
+				baseEntry({
+					id: 'alpha',
+					title: '阿尔法',
+					attention: { badgeCount: 1, level: 'unread' },
+					lastActivityAt: '2026-04-09T09:00:00.000Z',
+				}),
+				baseEntry({
+					id: 'newer',
+					title: '较新未读',
+					attention: { badgeCount: 1, level: 'unread' },
+					lastActivityAt: '2026-04-09T10:00:00.000Z',
+				}),
+			],
+			{
+				notificationDefaults: {
+					dms: 'all',
+					rooms: 'all',
+				},
+			},
+		);
 
 		expect(state.entries.map((entry) => entry.id)).toEqual(['newer', 'alpha', 'zebra']);
 	});
@@ -122,6 +171,10 @@ describe('buildSidebarAttentionDock', () => {
 			],
 			{
 				maxVisible: 2,
+				notificationDefaults: {
+					dms: 'all',
+					rooms: 'all',
+				},
 			},
 		);
 

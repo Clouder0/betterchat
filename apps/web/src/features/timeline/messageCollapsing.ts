@@ -337,6 +337,20 @@ const messagesMatchForStateTransfer = (leftMessage: TimelineMessage, rightMessag
 	(leftMessage.replyTo?.messageId ?? null) === (rightMessage.replyTo?.messageId ?? null) &&
 	attachmentsMatchForTransfer(leftMessage, rightMessage);
 
+const messagesShareSubmissionIdentity = (leftMessage: TimelineMessage, rightMessage: TimelineMessage) => {
+	const leftSubmissionId = leftMessage.submissionId ?? null;
+	const rightSubmissionId = rightMessage.submissionId ?? null;
+	if (!leftSubmissionId && !rightSubmissionId) {
+		return false;
+	}
+
+	return (
+		(leftSubmissionId !== null && leftSubmissionId === rightMessage.id) ||
+		(rightSubmissionId !== null && rightSubmissionId === leftMessage.id) ||
+		(leftSubmissionId !== null && rightSubmissionId !== null && leftSubmissionId === rightSubmissionId)
+	);
+};
+
 export const findMessageIdTransfers = (previousMessages: TimelineMessage[], nextMessages: TimelineMessage[]): MessageIdTransfer[] => {
 	if (previousMessages.length !== nextMessages.length) {
 		return [];
@@ -355,7 +369,7 @@ export const findMessageIdTransfers = (previousMessages: TimelineMessage[], next
 			return [];
 		}
 
-		return messagesMatchForStateTransfer(previousMessage, nextMessage)
+		return (messagesShareSubmissionIdentity(previousMessage, nextMessage) || messagesMatchForStateTransfer(previousMessage, nextMessage))
 			? [
 					{
 						fromId: previousMessage.id,

@@ -38,6 +38,7 @@ const createMessage = ({
 	deleted = false,
 	id,
 	replyTo,
+	submissionId,
 }: {
 	attachments?: TimelineMessage['attachments'];
 	authorDisplayName?: string;
@@ -47,6 +48,7 @@ const createMessage = ({
 	deleted?: boolean;
 	id: string;
 	replyTo?: TimelineMessage['replyTo'];
+	submissionId?: string;
 }): TimelineMessage => ({
 	actions: {
 		delete: true,
@@ -70,6 +72,7 @@ const createMessage = ({
 	replyTo,
 	reactions: [],
 	roomId: 'room-ops',
+	submissionId,
 });
 
 const createTimeline = (messages: TimelineMessage[]): RoomTimelineSnapshot => ({
@@ -244,5 +247,400 @@ describe('TimelineView component contracts', () => {
 
 		await waitFor(() => expect((messageStream as HTMLDivElement).scrollTop).toBe(320));
 		await waitFor(() => expect(queryByTestId(container, 'timeline-return-button')).toBeNull());
+	});
+
+	it('preserves visual-media expansion when a local optimistic upload is replaced by the canonical message id', async () => {
+		const baseMessage = createMessage({
+			id: 'message-base',
+		});
+		const optimisticUpload = createMessage({
+			attachments: [
+				{
+					kind: 'image',
+					id: 'attachment-local',
+					title: 'betterchat-e2e-upload.png',
+					preview: {
+						url: 'blob:http://127.0.0.1/local-preview',
+					},
+					source: {
+						url: 'blob:http://127.0.0.1/local-preview',
+					},
+				},
+			],
+			body: '附上一张截图',
+			id: 'room-ops-optimistic-upload',
+		});
+		const canonicalUpload = createMessage({
+			attachments: [
+				{
+					kind: 'image',
+					id: 'attachment-canonical',
+					title: 'betterchat-e2e-upload.png',
+					preview: {
+						url: '/api/media/file-upload/thumb-1/upload.png',
+						width: 360,
+						height: 270,
+					},
+					source: {
+						url: '/api/media/file-upload/file-1/upload.png',
+					},
+				},
+			],
+			body: '附上一张截图',
+			id: 'message-canonical-upload',
+		});
+
+		const rendered = renderWithAppProviders(
+			<TimelineView
+				forceScrollToBottomToken={0}
+				localOutgoingMessageIds={new Set<string>()}
+				timeline={createTimeline([baseMessage])}
+			/>,
+			{
+				withTheme: false,
+			},
+		);
+
+		rendered.rerender(
+			<TimelineView
+				forceScrollToBottomToken={1}
+				localOutgoingMessageIds={new Set<string>(['room-ops-optimistic-upload'])}
+				timeline={createTimeline([baseMessage, optimisticUpload])}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(getByTestId(rendered.container, 'timeline-message-content-room-ops-optimistic-upload').getAttribute('data-collapsed')).toBe(
+				'false',
+			),
+		);
+
+		rendered.rerender(
+			<TimelineView
+				forceScrollToBottomToken={1}
+				localOutgoingMessageIds={new Set<string>()}
+				timeline={createTimeline([baseMessage, canonicalUpload])}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(getByTestId(rendered.container, 'timeline-message-content-message-canonical-upload').getAttribute('data-collapsed')).toBe(
+				'false',
+			),
+		);
+	});
+
+	it('expands a failed image message when retry requests re-open its media surface', async () => {
+		const failedImageMessage = createMessage({
+			attachments: [
+				{
+					kind: 'image',
+					id: 'attachment-failed',
+					title: 'betterchat-e2e-upload.png',
+					preview: {
+						url: 'blob:http://127.0.0.1/retry-preview',
+					},
+					source: {
+						url: 'blob:http://127.0.0.1/retry-preview',
+					},
+				},
+			],
+			body: '附上一张截图',
+			id: 'message-failed-image',
+		});
+
+		const rendered = renderWithAppProviders(
+			<TimelineView
+				messageDeliveryStates={{
+					'message-failed-image': 'failed',
+				}}
+				timeline={createTimeline([failedImageMessage])}
+			/>,
+			{
+				withTheme: false,
+			},
+		);
+
+		expect(getByTestId(rendered.container, 'timeline-message-content-message-failed-image').getAttribute('data-collapsed')).toBe('true');
+
+		rendered.rerender(
+			<TimelineView
+				expansionRequest={{
+					messageId: 'message-failed-image',
+					token: 1,
+				}}
+				messageDeliveryStates={{
+					'message-failed-image': 'sending',
+				}}
+				timeline={createTimeline([failedImageMessage])}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(getByTestId(rendered.container, 'timeline-message-content-message-failed-image').getAttribute('data-collapsed')).toBe(
+				'false',
+			),
+		);
+	});
+
+	it('keeps a retried image expanded when the canonical message id replaces the local submission id', async () => {
+		const localSubmissionId = 'room-ops-submission-image';
+		const failedImageMessage = createMessage({
+			attachments: [
+				{
+					kind: 'image',
+					id: 'attachment-failed',
+					title: 'betterchat-e2e-upload.png',
+					preview: {
+						url: 'blob:http://127.0.0.1/retry-preview',
+					},
+					source: {
+						url: 'blob:http://127.0.0.1/retry-preview',
+					},
+				},
+			],
+			body: '附上一张截图',
+			id: localSubmissionId,
+			submissionId: localSubmissionId,
+		});
+		const canonicalImageMessage = createMessage({
+			attachments: [
+				{
+					kind: 'image',
+					id: 'attachment-canonical',
+					title: 'betterchat-e2e-upload.png',
+					preview: {
+						url: '/api/media/file-upload/upload-thumb.png',
+					},
+					source: {
+						url: '/api/media/file-upload/upload.png',
+					},
+				},
+			],
+			body: '附上一张截图',
+			id: 'message-canonical-image',
+			submissionId: localSubmissionId,
+		});
+
+		const rendered = renderWithAppProviders(
+			<TimelineView
+				messageDeliveryStates={{
+					[localSubmissionId]: 'failed',
+				}}
+				timeline={createTimeline([failedImageMessage])}
+			/>,
+			{
+				withTheme: false,
+			},
+		);
+
+		rendered.rerender(
+			<TimelineView
+				expansionRequest={{
+					messageId: localSubmissionId,
+					token: 1,
+				}}
+				messageDeliveryStates={{
+					[localSubmissionId]: 'sending',
+				}}
+				timeline={createTimeline([failedImageMessage])}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(getByTestId(rendered.container, `timeline-message-content-${localSubmissionId}`).getAttribute('data-collapsed')).toBe(
+				'false',
+			),
+		);
+
+		rendered.rerender(
+			<TimelineView
+				timeline={createTimeline([canonicalImageMessage])}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(
+				getByTestId(rendered.container, 'timeline-message-content-message-canonical-image').getAttribute('data-collapsed'),
+			).toBe('false'),
+		);
+	});
+
+	it('keeps a canonical retry image expanded when its delivery state settles from sending to sent without another id change', async () => {
+		const localSubmissionId = 'room-ops-submission-image';
+		const failedImageMessage = createMessage({
+			attachments: [
+				{
+					kind: 'image',
+					id: 'attachment-failed',
+					title: 'betterchat-e2e-upload.png',
+					preview: {
+						url: 'blob:http://127.0.0.1/retry-preview',
+					},
+					source: {
+						url: 'blob:http://127.0.0.1/retry-preview',
+					},
+				},
+			],
+			body: '附上一张截图',
+			id: localSubmissionId,
+			submissionId: localSubmissionId,
+		});
+		const canonicalImageMessage = createMessage({
+			attachments: [
+				{
+					kind: 'image',
+					id: 'attachment-canonical',
+					title: 'betterchat-e2e-upload.png',
+					preview: {
+						url: '/api/media/file-upload/upload-thumb.png',
+					},
+					source: {
+						url: '/api/media/file-upload/upload.png',
+					},
+				},
+			],
+			body: '附上一张截图',
+			id: 'message-canonical-image',
+			submissionId: localSubmissionId,
+		});
+
+		const rendered = renderWithAppProviders(
+			<TimelineView
+				messageDeliveryStates={{
+					[localSubmissionId]: 'failed',
+				}}
+				timeline={createTimeline([failedImageMessage])}
+			/>,
+			{
+				withTheme: false,
+			},
+		);
+
+		rendered.rerender(
+			<TimelineView
+				expansionRequest={{
+					messageId: localSubmissionId,
+					token: 1,
+				}}
+				messageDeliveryStates={{
+					[localSubmissionId]: 'sending',
+				}}
+				timeline={createTimeline([failedImageMessage])}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(getByTestId(rendered.container, `timeline-message-content-${localSubmissionId}`).getAttribute('data-collapsed')).toBe(
+				'false',
+			),
+		);
+
+		rendered.rerender(
+			<TimelineView
+				localOutgoingMessageIds={new Set<string>(['message-canonical-image'])}
+				messageDeliveryStates={{
+					'message-canonical-image': 'sending',
+				}}
+				timeline={createTimeline([canonicalImageMessage])}
+			/>,
+		);
+
+		rendered.rerender(
+			<TimelineView
+				timeline={createTimeline([canonicalImageMessage])}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(
+				getByTestId(rendered.container, 'timeline-message-content-message-canonical-image').getAttribute('data-collapsed'),
+			).toBe('false'),
+		);
+	});
+
+	it('keeps a retried image expanded when the canonical row appears after a transient gap', async () => {
+		const localSubmissionId = 'room-ops-submission-image';
+		const failedImageMessage = createMessage({
+			attachments: [
+				{
+					kind: 'image',
+					id: 'attachment-failed',
+					title: 'betterchat-e2e-upload.png',
+					preview: {
+						url: 'blob:http://127.0.0.1/retry-preview',
+					},
+					source: {
+						url: 'blob:http://127.0.0.1/retry-preview',
+					},
+				},
+			],
+			body: '附上一张截图',
+			id: localSubmissionId,
+			submissionId: localSubmissionId,
+		});
+		const canonicalImageMessage = createMessage({
+			attachments: [
+				{
+					kind: 'image',
+					id: 'attachment-canonical',
+					title: 'betterchat-e2e-upload.png',
+					preview: {
+						url: '/api/media/file-upload/upload-thumb.png',
+					},
+					source: {
+						url: '/api/media/file-upload/upload.png',
+					},
+				},
+			],
+			body: '附上一张截图',
+			id: 'message-canonical-image',
+			submissionId: localSubmissionId,
+		});
+
+		const rendered = renderWithAppProviders(
+			<TimelineView
+				messageDeliveryStates={{
+					[localSubmissionId]: 'failed',
+				}}
+				timeline={createTimeline([failedImageMessage])}
+			/>,
+			{
+				withTheme: false,
+			},
+		);
+
+		rendered.rerender(
+			<TimelineView
+				expansionRequest={{
+					messageId: localSubmissionId,
+					token: 1,
+				}}
+				messageDeliveryStates={{
+					[localSubmissionId]: 'sending',
+				}}
+				timeline={createTimeline([failedImageMessage])}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(getByTestId(rendered.container, `timeline-message-content-${localSubmissionId}`).getAttribute('data-collapsed')).toBe(
+				'false',
+			),
+		);
+
+		rendered.rerender(<TimelineView timeline={createTimeline([])} />);
+		await waitFor(() => expect(queryByTestId(rendered.container, `timeline-message-content-${localSubmissionId}`)).toBeNull());
+		rendered.rerender(
+			<TimelineView
+				timeline={createTimeline([canonicalImageMessage])}
+			/>,
+		);
+
+		await waitFor(() =>
+			expect(
+				getByTestId(rendered.container, 'timeline-message-content-message-canonical-image').getAttribute('data-collapsed'),
+			).toBe('false'),
+		);
 	});
 });

@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent as ReactKeyboardEvent } from 'react';
 
 import { resolveSidebarSecondaryMeta } from '@/features/sidebar/sidebarPresence';
-import type { RoomAlertPreferenceStore } from '@/features/sidebar/roomAlertPreferences';
+import type { RoomNotificationPreferenceStore } from '@/features/notifications/notificationPreferences';
 import type { SidebarOrderingState } from '@/features/sidebar/sidebarOrdering';
 import { getAvatarLabel } from '@/lib/avatar';
 import type { RoomSummary, TimelineMessage } from '@/lib/chatModels';
@@ -61,7 +61,7 @@ export const ForwardMessageDialog = ({
 	onSubmit: (payload: { note: string; roomId: string }) => Promise<void>;
 	sidebarEntries: RoomSummary[];
 	sidebarOrderingState?: SidebarOrderingState;
-	roomAlertPreferences?: RoomAlertPreferenceStore;
+	roomAlertPreferences?: RoomNotificationPreferenceStore;
 	sourceMessage: TimelineMessage | null;
 	sourceRoomTitle: string | null;
 }) => {

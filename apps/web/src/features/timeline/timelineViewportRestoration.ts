@@ -104,3 +104,7 @@ export const mergePendingContentResizeAdjustment = <TSnapshot>({
 
 	return nextAdjustment;
 };
+
+export const shouldDropPendingContentResizeAdjustmentOnManualScroll = <TSnapshot>(
+	adjustment: PendingContentResizeAdjustment<TSnapshot> | null,
+) => adjustment?.mode === 'anchor' && adjustment.source === 'content-resize';

@@ -32,6 +32,7 @@ const createMessage = (overrides: Partial<TimelineMessage> = {}): TimelineMessag
 	replyTo: overrides.replyTo,
 	thread: overrides.thread,
 	attachments: overrides.attachments,
+	submissionId: overrides.submissionId,
 });
 
 describe('messageCollapsing', () => {
@@ -396,6 +397,60 @@ describe('messageCollapsing', () => {
 			{
 				fromId: 'room-1-optimistic-upload',
 				toId: 'room-1-hydrated-upload',
+			},
+		]);
+	});
+
+	it('detects local submission-to-canonical replacements by submission id even when media urls change', () => {
+		const previousMessages = [
+			createMessage({
+				id: 'room-1-submission-1',
+				attachments: [
+					{
+						kind: 'image',
+						id: 'attachment-local',
+						title: 'betterchat-e2e-upload.png',
+						preview: {
+							url: 'blob:http://127.0.0.1/local-preview',
+						},
+						source: {
+							url: 'blob:http://127.0.0.1/local-preview',
+						},
+					},
+				],
+				body: {
+					rawMarkdown: '附上一张截图',
+				},
+				submissionId: 'room-1-submission-1',
+			}),
+		];
+		const nextMessages = [
+			createMessage({
+				id: 'room-1-canonical-upload',
+				attachments: [
+					{
+						kind: 'image',
+						id: 'attachment-canonical',
+						title: 'betterchat-e2e-upload.png',
+						preview: {
+							url: '/api/media/messages/uploaded-image-thumb',
+						},
+						source: {
+							url: '/api/media/messages/uploaded-image',
+						},
+					},
+				],
+				body: {
+					rawMarkdown: '附上一张截图',
+				},
+				submissionId: 'room-1-submission-1',
+			}),
+		];
+
+		expect(findMessageIdTransfers(previousMessages, nextMessages)).toEqual([
+			{
+				fromId: 'room-1-submission-1',
+				toId: 'room-1-canonical-upload',
 			},
 		]);
 	});

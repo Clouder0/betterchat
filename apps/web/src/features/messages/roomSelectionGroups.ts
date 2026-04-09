@@ -1,6 +1,6 @@
 import type { RoomSummary } from '@/lib/chatModels';
 import { buildSidebarGroups, type SidebarGroup } from '@/features/sidebar/sidebarModel';
-import type { RoomAlertPreferenceStore } from '@/features/sidebar/roomAlertPreferences';
+import type { RoomNotificationPreferenceStore } from '@/features/notifications/notificationPreferences';
 import type { SidebarOrderingState } from '@/features/sidebar/sidebarOrdering';
 
 export const buildRoomSelectionGroups = ({
@@ -11,7 +11,7 @@ export const buildRoomSelectionGroups = ({
 	query = '',
 }: {
 	activeRoomId?: string | null;
-	alertPreferences?: RoomAlertPreferenceStore;
+	alertPreferences?: RoomNotificationPreferenceStore;
 	entries: RoomSummary[];
 	orderingState?: SidebarOrderingState;
 	query?: string;

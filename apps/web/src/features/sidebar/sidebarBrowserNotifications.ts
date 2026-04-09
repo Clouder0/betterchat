@@ -1,9 +1,13 @@
 import { createMessageExcerpt } from '@/features/messages/messageCompose';
-import type { RoomAttentionLevel, RoomSummary, TimelineMessage } from '@/lib/chatModels';
+import type { RoomSummary, TimelineMessage } from '@/lib/chatModels';
 
-import type { RoomAlertPreference } from './roomAlertPreferences';
+import type { RoomNotificationPreference } from '@/features/notifications/notificationPreferences';
+import {
+	isInterruptiveRoomAttentionAllowed,
+	isNotificationMessageAllowedForPreference,
+} from '@/features/notifications/notificationPolicy';
 
-const notificationAttentionPriority: Record<RoomAttentionLevel, number> = {
+const notificationAttentionPriority: Record<RoomSummary['attention']['level'], number> = {
 	mention: 3,
 	unread: 2,
 	activity: 1,
@@ -32,39 +36,69 @@ export const shouldNotifyForSidebarEntry = ({
 	pageVisible = true,
 	nextEntry,
 	previousEntry,
-	priority,
+	preference,
 }: {
 	currentRoomId: string | null | undefined;
 	pageFocused?: boolean;
 	pageVisible?: boolean;
 	nextEntry: RoomSummary;
 	previousEntry?: RoomSummary | null;
-	priority: RoomAlertPreference;
+	preference: RoomNotificationPreference;
 }) => {
-	if (priority !== 'subscribed') {
+	if (preference === 'mute') {
 		return false;
 	}
 
-	if (currentRoomId === nextEntry.id && pageFocused && pageVisible) {
+	if (currentRoomId === nextEntry.id) {
+		return false;
+	}
+
+	if (
+		!isInterruptiveRoomAttentionAllowed({
+			entry: nextEntry,
+			preference,
+		})
+	) {
 		return false;
 	}
 
 	const previousAttentionLevel = previousEntry?.attention.level ?? 'none';
 	const previousBadgeCount = previousEntry?.attention.badgeCount ?? 0;
 	const nextBadgeCount = nextEntry.attention.badgeCount ?? 0;
-	const activityAdvanced = didSidebarEntryActivityAdvance({
-		nextEntry,
-		previousEntry,
-	});
-	if (currentRoomId === nextEntry.id && (!pageFocused || !pageVisible) && activityAdvanced) {
-		return true;
-	}
-
 	const escalatedAttention =
 		notificationAttentionPriority[nextEntry.attention.level] > notificationAttentionPriority[previousAttentionLevel];
 	const unreadIncreased = nextBadgeCount > previousBadgeCount;
 
 	return escalatedAttention || unreadIncreased;
+};
+
+export const shouldFallbackNotifyForSidebarEntry = ({
+	currentRoomId,
+	pageFocused = true,
+	pageVisible = true,
+	nextEntry,
+	previousEntry,
+	preference,
+}: {
+	currentRoomId: string | null | undefined;
+	pageFocused?: boolean;
+	pageVisible?: boolean;
+	nextEntry: RoomSummary;
+	previousEntry?: RoomSummary | null;
+	preference: RoomNotificationPreference;
+}) => {
+	if (preference === 'mute') {
+		return false;
+	}
+
+	if (currentRoomId === nextEntry.id) {
+		return false;
+	}
+
+	return isInterruptiveRoomAttentionAllowed({
+		entry: nextEntry,
+		preference,
+	});
 };
 
 export const resolveSidebarBrowserNotificationBody = (entry: RoomSummary) => {
@@ -107,28 +141,48 @@ export const resolveSidebarBrowserNotificationMessageBody = (message: SidebarNot
 	`${message.author.displayName} · ${createMessageExcerpt(message as TimelineMessage)}`;
 
 export const resolveSidebarNotificationMessages = ({
-	currentUserId,
+	currentUser,
 	lastNotifiedMessageId,
 	limit,
 	messages,
+	entry,
+	preference,
 }: {
-	currentUserId?: string | null;
+	currentUser?: {
+		id?: string;
+		displayName?: string;
+		username?: string;
+	} | null;
 	lastNotifiedMessageId?: string | null;
 	limit: number;
 	messages: readonly SidebarNotificationMessageCandidate[];
+	entry: Pick<RoomSummary, 'kind'>;
+	preference: RoomNotificationPreference;
 }) => {
 	if (limit <= 0) {
 		return [];
 	}
 
-	const authoredByOthers = messages.filter((message) => message.author.id !== currentUserId);
+	const authoredByOthers = messages.filter((message) => message.author.id !== currentUser?.id);
+	const eligibleMessages = authoredByOthers.filter((message) =>
+		isNotificationMessageAllowedForPreference({
+			currentUser,
+			entry,
+			message,
+			preference,
+		}),
+	);
 	const startIndex =
 		lastNotifiedMessageId === null || lastNotifiedMessageId === undefined
 			? -1
-			: authoredByOthers.findIndex((message) => message.id === lastNotifiedMessageId);
-	const unseenMessages = startIndex >= 0 ? authoredByOthers.slice(startIndex + 1) : authoredByOthers;
+			: eligibleMessages.findIndex((message) => message.id === lastNotifiedMessageId);
+	const unseenMessages = startIndex >= 0 ? eligibleMessages.slice(startIndex + 1) : eligibleMessages;
 	if (unseenMessages.length === 0) {
 		return [];
+	}
+
+	if (startIndex >= 0) {
+		return unseenMessages;
 	}
 
 	return unseenMessages.slice(-limit);
