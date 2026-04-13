@@ -1171,4 +1171,98 @@ describe('AppShell component contracts', () => {
 		await waitFor(() => expect(favoriteToggle.getAttribute('aria-pressed')).toBe('false'));
 		expect(document.activeElement).toBe(favoriteToggle);
 	});
-});
+
+	it('keeps the loading bottom lane quiet while clearing readonly composer chrome during room switches', async () => {
+		dom = installTestDom();
+		const normalRoomState = createRoomState();
+		const normalTimelineState = createTimelineState();
+		const readonlyRoomState: RoomSnapshot = {
+			...normalRoomState,
+			room: {
+				...normalRoomState.room,
+				capabilities: {
+					...normalRoomState.room.capabilities,
+					canSendMessages: false,
+					canUploadImages: false,
+				},
+				description: 'Readonly announcements',
+				id: 'room-readonly',
+				subtitle: 'Readonly updates',
+				title: 'Readonly updates',
+			},
+			version: 'room-readonly-v1',
+		};
+		const readonlyTimelineState: RoomTimelineSnapshot = {
+			...normalTimelineState,
+			messages: normalTimelineState.messages.map((message) => ({
+				...message,
+				roomId: 'room-readonly',
+			})),
+			roomId: 'room-readonly',
+			version: 'timeline-readonly-v1',
+		};
+		const nextRoomDeferred = createDeferred<RoomSnapshot>();
+		const nextTimelineDeferred = createDeferred<RoomTimelineSnapshot>();
+
+		roomListState = {
+			...roomListState,
+			rooms: [
+				{
+					attention: {
+						level: 'none',
+					},
+					favorite: false,
+					id: 'room-readonly',
+					kind: 'channel',
+					subtitle: 'Readonly updates',
+					title: 'Readonly updates',
+					visibility: 'visible',
+				},
+				...roomListState.rooms,
+			],
+		};
+		roomState = normalRoomState;
+		timelineState = normalTimelineState;
+		mockRoom.mockImplementation(async (requestedRoomId: string) => {
+			if (requestedRoomId === 'room-readonly') {
+				return readonlyRoomState;
+			}
+
+			if (requestedRoomId === normalRoomState.room.id) {
+				return nextRoomDeferred.promise;
+			}
+
+			return normalRoomState;
+		});
+		mockRoomTimeline.mockImplementation(async (requestedRoomId: string) => {
+			if (requestedRoomId === 'room-readonly') {
+				return readonlyTimelineState;
+			}
+
+			if (requestedRoomId === normalTimelineState.roomId) {
+				return nextTimelineDeferred.promise;
+			}
+
+			return normalTimelineState;
+		});
+
+		const { container, rerender } = renderWithAppProviders(<AppShell roomId='room-readonly' />);
+		await waitFor(() => expect(getByTestId(container, 'readonly-composer-notice')).toBeTruthy());
+
+		rerender(<AppShell roomId='room-ops' />);
+
+		await waitFor(() => expect(getByTestId(container, 'room-loading-skeleton')).toBeTruthy());
+		expect(getByTestId(container, 'room-loading-bottom-lane').getAttribute('data-mode')).toBe('quiet');
+		expect(container.querySelector('[data-testid="readonly-composer-notice"]')).toBeNull();
+		expect(container.querySelector('[data-testid="composer"]')).toBeNull();
+
+		await act(async () => {
+			nextRoomDeferred.resolve(normalRoomState);
+			nextTimelineDeferred.resolve(normalTimelineState);
+			await Promise.resolve();
+		});
+
+		await waitFor(() => expect(getByTestId(container, 'composer')).toBeTruthy());
+		expect(container.querySelector('[data-testid="readonly-composer-notice"]')).toBeNull();
+	});
+	});

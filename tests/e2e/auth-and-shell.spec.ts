@@ -651,7 +651,7 @@ test.describe('auth and shell', () => {
 		await expect(page.getByTestId('composer-image-trigger')).toHaveCount(0);
 	});
 
-	test('keeps the loading bottom lane neutral when switching from a readonly room into a normal room', async ({ page }) => {
+	test('clears readonly composer chrome when switching from a readonly room into a normal room', async ({ page }) => {
 		await loginAsFixtureUser(page);
 		await waitForRoomLoadingToFinish(page);
 		await openRoom(page, 'readonly-updates');
@@ -661,8 +661,6 @@ test.describe('auth and shell', () => {
 
 		await page.getByTestId('sidebar-room-platform-duty').click();
 		await expect(page).toHaveURL(/\/app\/rooms\/platform-duty$/);
-		await expect(page.getByTestId('room-loading-skeleton')).toBeVisible();
-		await expect(page.getByTestId('room-loading-bottom-lane')).toHaveAttribute('data-mode', 'quiet');
 		await expect(page.getByTestId('readonly-composer-notice')).toHaveCount(0);
 		await expect(page.getByTestId('composer')).toHaveCount(0);
 
