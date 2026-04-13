@@ -54,11 +54,27 @@ describe('backend harness entrypoints', () => {
     await mkdir(binDir, { recursive: true });
     await writeFile(manifestPath, '{"stale":true}\n', 'utf8');
     await installExecutable(binDir, 'systemctl', 'exit 0');
-    await installExecutable(binDir, 'podman', 'exit 23');
+    await installExecutable(binDir, 'podman', 'exit 0');
+    await installExecutable(
+      binDir,
+      'docker',
+      `
+if [ "\${1:-}" != "compose" ]; then
+  exit 97
+fi
+
+if [ -e "${manifestPath}" ]; then
+  exit 17
+fi
+
+exit 23
+`,
+    );
     await installExecutable(binDir, 'bun', 'exit 99');
 
     const exitCode = await spawnScript(backendStackStartScript, {
       ...process.env,
+      COMPOSE_TOOL: 'docker compose',
       PATH: `${binDir}:${process.env.PATH || ''}`,
       BETTERCHAT_TEST_SEED_MANIFEST_PATH: manifestPath,
     });
