@@ -1424,6 +1424,9 @@ test.describe('timeline behavior', () => {
 			height: 40,
 		});
 		const caption = `图片发送稳定性 ${Date.now()}`;
+		await page.evaluate(() => {
+			window.localStorage.setItem('betterchat.fixture.next-image-upload-delay-ms', '600');
+		});
 
 		await page.getByTestId('composer-image-input').setInputFiles({
 			buffer: mediumBmpFixture.buffer,

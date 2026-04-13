@@ -42,6 +42,7 @@ import { toTimelineMessage } from '@/lib/chatAdapters';
 const FIXTURE_SESSION_STORAGE_KEY = 'betterchat.fixture.session';
 const FIXTURE_FAIL_NEXT_IMAGE_UPLOAD_STORAGE_KEY = 'betterchat.fixture.fail-next-image-upload';
 const FIXTURE_FAIL_IMAGE_UPLOAD_ALWAYS_STORAGE_KEY = 'betterchat.fixture.fail-image-upload-always';
+const FIXTURE_NEXT_IMAGE_UPLOAD_DELAY_MS_STORAGE_KEY = 'betterchat.fixture.next-image-upload-delay-ms';
 const FIXTURE_TIMELINE_PAGE_SIZE = 50;
 
 type FixtureSidebarEntry = {
@@ -1437,6 +1438,18 @@ const consumeFixtureFlag = (storageKey: string) => {
 	return value === '1' || value.toLowerCase() === 'true';
 };
 
+const consumeFixtureDelayMs = (storageKey: string) => {
+	const storage = getFixtureStorage();
+	const value = storage.getItem(storageKey);
+	if (!value) {
+		return 0;
+	}
+
+	storage.removeItem(storageKey);
+	const delayMs = Number.parseInt(value, 10);
+	return Number.isFinite(delayMs) && delayMs > 0 ? delayMs : 0;
+};
+
 const hasFixtureFlag = (storageKey: string) => {
 	const value = getFixtureStorage().getItem(storageKey);
 	return Boolean(value && (value === '1' || value.toLowerCase() === 'true'));
@@ -1982,6 +1995,11 @@ export const fixtureBetterChatService = {
 				code: 'UPSTREAM_UNAVAILABLE' as const,
 				message: '图片发送失败，请重试。',
 			};
+		}
+
+		const uploadDelayMs = consumeFixtureDelayMs(FIXTURE_NEXT_IMAGE_UPLOAD_DELAY_MS_STORAGE_KEY);
+		if (uploadDelayMs > 0) {
+			await new Promise((resolve) => globalThis.setTimeout(resolve, uploadDelayMs));
 		}
 
 		const createdAt = createNextFixtureMessageTimestamp(record.timeline);

@@ -148,6 +148,66 @@ describe('fixtureBetterChatService', () => {
 		]);
 	});
 
+	it('consumes a one-shot fixture image upload delay so optimistic upload regressions can assert the sending state deterministically', async () => {
+		const storageValues = new Map<string, string>();
+		const localStorage = {
+			getItem: (key: string) => storageValues.get(key) ?? null,
+			removeItem: (key: string) => {
+				storageValues.delete(key);
+			},
+			setItem: (key: string, value: string) => {
+				storageValues.set(key, value);
+			},
+		};
+		const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+		Object.defineProperty(globalThis, 'window', {
+			configurable: true,
+			value: {
+				localStorage,
+			},
+		});
+
+		try {
+			await fixtureBetterChatService.login(fixtureLogin);
+			const delayedFile = new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'fixture-delay.png', {
+				type: 'image/png',
+			});
+			window.localStorage.setItem('betterchat.fixture.next-image-upload-delay-ms', '25');
+
+			let delayedSettled = false;
+			const delayedUpload = fixtureBetterChatService.uploadConversationMedia('ops-handoff', {
+				file: delayedFile,
+				submissionId: 'submission-fixture-image-delay-1',
+			});
+			void delayedUpload.finally(() => {
+				delayedSettled = true;
+			});
+
+			await Promise.resolve();
+			expect(delayedSettled).toBe(false);
+			await delayedUpload;
+
+			let immediateSettled = false;
+			const immediateUpload = fixtureBetterChatService.uploadConversationMedia('ops-handoff', {
+				file: delayedFile,
+				submissionId: 'submission-fixture-image-delay-2',
+			});
+			void immediateUpload.finally(() => {
+				immediateSettled = true;
+			});
+
+			await Promise.resolve();
+			expect(immediateSettled).toBe(true);
+			await immediateUpload;
+		} finally {
+			if (originalWindow) {
+				Object.defineProperty(globalThis, 'window', originalWindow);
+			} else {
+				delete (globalThis as typeof globalThis & { window?: unknown }).window;
+			}
+		}
+	});
+
 	it('applies membership commands against canonical inbox state', async () => {
 		await fixtureBetterChatService.login(fixtureLogin);
 
