@@ -3041,20 +3041,34 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		URL.revokeObjectURL(previewUrl);
 	}, []);
 
+	const commitLocalRoomMessages = useCallback(
+		(updater: (currentMessages: Record<string, LocalRoomMessage[]>) => Record<string, LocalRoomMessage[]>) => {
+			const currentMessages = roomLocalMessagesRef.current;
+			const nextMessages = updater(currentMessages);
+			if (nextMessages === currentMessages) {
+				return currentMessages;
+			}
+
+			roomLocalMessagesRef.current = nextMessages;
+			setRoomLocalMessages(nextMessages);
+			return nextMessages;
+		},
+		[],
+	);
+
 	const addLocalRoomMessage = useCallback((targetRoomId: string, localMessage: LocalRoomMessage) => {
-		setRoomLocalMessages((currentMessages) => {
+		commitLocalRoomMessages((currentMessages) => {
 			const nextMessages = {
 				...currentMessages,
 				[targetRoomId]: [...(currentMessages[targetRoomId] ?? []), localMessage],
 			};
-			roomLocalMessagesRef.current = nextMessages;
 			return nextMessages;
 		});
-	}, []);
+	}, [commitLocalRoomMessages]);
 
 	const updateLocalRoomMessage = useCallback(
 		(targetRoomId: string, messageId: string, updater: (message: LocalRoomMessage) => LocalRoomMessage) => {
-			setRoomLocalMessages((currentMessages) => {
+			commitLocalRoomMessages((currentMessages) => {
 				const currentRoomMessages = currentMessages[targetRoomId] ?? [];
 				let changed = false;
 				const nextRoomMessages = currentRoomMessages.map((localMessage) => {
@@ -3079,17 +3093,16 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 					...currentMessages,
 					[targetRoomId]: nextRoomMessages,
 				};
-				roomLocalMessagesRef.current = nextMessages;
 				return nextMessages;
 			});
 		},
-		[],
+		[commitLocalRoomMessages],
 	);
 
 	const removeLocalRoomMessage = useCallback(
 		(targetRoomId: string, messageId: string) => {
 			let removedPreviewUrl: string | undefined;
-			setRoomLocalMessages((currentMessages) => {
+			commitLocalRoomMessages((currentMessages) => {
 				const currentRoomMessages = currentMessages[targetRoomId] ?? [];
 				const nextRoomMessages = currentRoomMessages.filter((localMessage) => {
 					if (localMessage.message.id === messageId) {
@@ -3110,7 +3123,6 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 				} else {
 					nextMessages[targetRoomId] = nextRoomMessages;
 				}
-				roomLocalMessagesRef.current = nextMessages;
 				return nextMessages;
 			});
 
@@ -3118,7 +3130,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 				releaseOptimisticPreviewUrl(removedPreviewUrl);
 			}
 		},
-		[releaseOptimisticPreviewUrl],
+		[commitLocalRoomMessages, releaseOptimisticPreviewUrl],
 	);
 
 	const getLocalRoomMessage = useCallback(

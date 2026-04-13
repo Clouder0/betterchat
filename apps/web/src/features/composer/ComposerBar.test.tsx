@@ -172,6 +172,94 @@ describe('ComposerBar component contracts', () => {
 		expect(revokeObjectUrl).toHaveBeenCalledWith('blob:composer-selected-image');
 	});
 
+	it('waits for selected image dimensions before sending so optimistic image layout starts stable', async () => {
+		const originalImage = globalThis.Image;
+		const pendingImageLoads: Array<() => void> = [];
+
+		class DeferredImage {
+			complete = false;
+			height = 40;
+			naturalHeight = 40;
+			naturalWidth = 60;
+			onerror: ((this: GlobalEventHandlers, ev: Event | string) => unknown) | null = null;
+			onload: ((this: GlobalEventHandlers, ev: Event) => unknown) | null = null;
+			width = 60;
+			#src = '';
+
+			get src() {
+				return this.#src;
+			}
+
+			set src(nextSrc: string) {
+				this.#src = nextSrc;
+				pendingImageLoads.push(() => {
+					this.complete = true;
+					this.onload?.call(this as unknown as GlobalEventHandlers, new Event('load'));
+				});
+			}
+		}
+
+		Object.defineProperty(globalThis, 'Image', {
+			configurable: true,
+			value: DeferredImage,
+		});
+
+		try {
+			const { container } = await renderComposerBar(<ComposerBar canUploadImages onSend={onSend} sendShortcut='enter-send' />);
+
+			const imageInput = getByTestId(container, 'composer-image-input') as HTMLInputElement;
+			const textarea = getByTestId(container, 'composer-textarea') as HTMLTextAreaElement;
+			const selectedFile = new File(['png-bytes'], 'diagram.png', {
+				type: 'image/png',
+			});
+
+			await act(async () => {
+				fireEvent.change(imageInput, {
+					target: {
+						files: [selectedFile],
+					},
+				});
+			});
+
+			await waitFor(() => expect(getByTestId(container, 'composer-image-preview')).toBeTruthy());
+
+			await act(async () => {
+				fireEvent.change(textarea, {
+					target: {
+						value: '附上一张截图',
+					},
+				});
+			});
+
+			await act(async () => {
+				fireEvent.click(getByTestId(container, 'composer-send'));
+			});
+
+			expect(onSend).not.toHaveBeenCalled();
+
+			await act(async () => {
+				pendingImageLoads.splice(0).forEach((resolveLoad) => resolveLoad());
+				await Promise.resolve();
+			});
+
+			await waitFor(() =>
+				expect(onSend).toHaveBeenCalledWith({
+					imageDimensions: {
+						height: 40,
+						width: 60,
+					},
+					imageFile: selectedFile,
+					text: '附上一张截图',
+				}),
+			);
+		} finally {
+			Object.defineProperty(globalThis, 'Image', {
+				configurable: true,
+				value: originalImage,
+			});
+		}
+	});
+
 	it('opens mention candidates and inserts the selected mention into the raw composer value', async () => {
 		mockRoomMentionCandidates.mockImplementation(async (_roomId: string, options: { query?: string }) => ({
 			conversationId: 'room-1',

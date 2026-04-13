@@ -391,8 +391,8 @@ export const ComposerBar = forwardRef<ComposerBarHandle, {
 	const fallbackSelectionRef = useRef({ anchor: 0, head: 0 });
 	const fallbackLastInputAtRef = useRef(0);
 	const fallbackComposingRef = useRef(false);
+	const imageDimensionLoadsRef = useRef(new Map<string, Promise<{ height: number; width: number } | null>>());
 	const imageTransferDragDepthRef = useRef(0);
-	const selectedImageRef = useRef<ComposerSelectedImage | null>(null);
 	const retainedPreviewUrlsRef = useRef(new Set<string>());
 	const [text, setText] = useState('');
 	const [selectedImage, setSelectedImage] = useState<ComposerSelectedImage | null>(null);
@@ -425,6 +425,7 @@ export const ComposerBar = forwardRef<ComposerBarHandle, {
 			return;
 		}
 
+		imageDimensionLoadsRef.current.delete(previewUrl);
 		retainedPreviewUrlsRef.current.delete(previewUrl);
 		URL.revokeObjectURL(previewUrl);
 	}, []);
@@ -461,12 +462,9 @@ export const ComposerBar = forwardRef<ComposerBarHandle, {
 		[onFocusChange],
 	);
 
-	useEffect(() => {
-		selectedImageRef.current = selectedImage;
-	}, [selectedImage]);
-
 	useEffect(
 		() => () => {
+			imageDimensionLoadsRef.current.clear();
 			retainedPreviewUrlsRef.current.forEach((previewUrl) => URL.revokeObjectURL(previewUrl));
 			retainedPreviewUrlsRef.current.clear();
 		},
@@ -530,7 +528,7 @@ export const ComposerBar = forwardRef<ComposerBarHandle, {
 
 	const submit = () => {
 		const trimmedText = text.trim();
-		const submittedImage = selectedImageRef.current;
+		const submittedImage = selectedImage;
 
 		if ((!trimmedText && !submittedImage) || disabled) {
 			return;
@@ -550,11 +548,21 @@ export const ComposerBar = forwardRef<ComposerBarHandle, {
 		editorRef.current?.focus();
 
 		void Promise.resolve()
-			.then(() =>
-				onSend({
+			.then(async () => {
+				const resolvedImageDimensions =
+					submittedImage && !submittedImage.dimensions
+						? (await imageDimensionLoadsRef.current.get(submittedImage.previewUrl)?.catch(() => null)) ?? undefined
+						: submittedImage?.dimensions;
+
+				return {
+					imageDimensions: resolvedImageDimensions,
 					imageFile: submittedImage?.file,
-					imageDimensions: submittedImage?.dimensions,
 					text: trimmedText,
+				} satisfies ComposerSubmitPayload;
+			})
+			.then((submitPayload) =>
+				onSend({
+					...submitPayload,
 				}),
 			)
 			.then(() => {
@@ -563,8 +571,34 @@ export const ComposerBar = forwardRef<ComposerBarHandle, {
 				}
 			})
 			.catch((error) => {
+				const restoredDimensionsPromise = submittedImage ? imageDimensionLoadsRef.current.get(submittedImage.previewUrl) : undefined;
 				setErrorMessage(error instanceof Error ? error.message : '发送失败，请稍后重试。');
 				setText((currentText) => currentText || trimmedText);
+				if (submittedImage) {
+					void restoredDimensionsPromise?.then((resolvedImageDimensions) => {
+						if (!resolvedImageDimensions) {
+							return;
+						}
+
+						setSelectedImage((currentImage) => {
+							if (!currentImage || currentImage.previewUrl !== submittedImage.previewUrl) {
+								return currentImage;
+							}
+
+							if (
+								currentImage.dimensions?.width === resolvedImageDimensions.width &&
+								currentImage.dimensions?.height === resolvedImageDimensions.height
+							) {
+								return currentImage;
+							}
+
+							return {
+								...currentImage,
+								dimensions: resolvedImageDimensions,
+							};
+						});
+					});
+				}
 				setSelectedImage((currentImage) => currentImage ?? submittedImage ?? null);
 				editorRef.current?.focus();
 			});
@@ -633,7 +667,9 @@ export const ComposerBar = forwardRef<ComposerBarHandle, {
 			});
 			setErrorMessage(null);
 
-			void loadPreviewImageDimensions(previewUrl).then((dimensions) => {
+			const dimensionsLoad = loadPreviewImageDimensions(previewUrl);
+			imageDimensionLoadsRef.current.set(previewUrl, dimensionsLoad);
+			void dimensionsLoad.then((dimensions) => {
 				if (!dimensions) {
 					return;
 				}

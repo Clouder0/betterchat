@@ -581,8 +581,45 @@ describe('AppShell component contracts', () => {
 			...createTimelineState(),
 			messages: [],
 		};
+		const originalImage = globalThis.Image;
+
+		class ImmediateImage {
+			complete = false;
+			height = 1;
+			naturalHeight = 1;
+			naturalWidth = 1;
+			onerror: ((this: GlobalEventHandlers, ev: Event | string) => unknown) | null = null;
+			onload: ((this: GlobalEventHandlers, ev: Event) => unknown) | null = null;
+			width = 1;
+			#src = '';
+
+			get src() {
+				return this.#src;
+			}
+
+			set src(nextSrc: string) {
+				this.#src = nextSrc;
+				queueMicrotask(() => {
+					this.complete = true;
+					this.onload?.call(this as unknown as GlobalEventHandlers, new Event('load'));
+				});
+			}
+		}
+
+		Object.defineProperty(globalThis, 'Image', {
+			configurable: true,
+			value: ImmediateImage,
+		});
+		Object.defineProperty(window, 'Image', {
+			configurable: true,
+			value: ImmediateImage,
+		});
+
 		let uploadAttempt = 0;
-		mockUploadImage.mockImplementation(async (_roomId: string, request: { file: File; submissionId?: string; text?: string }) => {
+		mockUploadImage.mockImplementation(async (
+			_roomId: string,
+			request: { file: File; imageDimensions?: { height: number; width: number }; submissionId?: string; text?: string },
+		) => {
 			uploadAttempt += 1;
 			if (uploadAttempt === 1) {
 				throw new Error('图片发送失败，请重试。');
@@ -600,9 +637,11 @@ describe('AppShell component contracts', () => {
 							kind: 'image',
 							preview: {
 								url: '/api/media/file-upload/upload-thumb.png',
+								...(request.imageDimensions ? request.imageDimensions : {}),
 							},
 							source: {
 								url: '/api/media/file-upload/upload.png',
+								...(request.imageDimensions ? request.imageDimensions : {}),
 							},
 							title: request.file.name,
 						},
@@ -627,59 +666,72 @@ describe('AppShell component contracts', () => {
 			};
 		});
 
-		const { container } = renderWithAppProviders(<AppShell roomId='room-ops' />);
-		await waitFor(() => expect(getByTestId(container, 'composer-textarea')).toBeTruthy());
+		try {
+			const { container } = renderWithAppProviders(<AppShell roomId='room-ops' />);
+			await waitFor(() => expect(getByTestId(container, 'composer-textarea')).toBeTruthy());
 
-		const composerImageInput = getByTestId(container, 'composer-image-input') as HTMLInputElement;
-		const composerTextarea = getByTestId(container, 'composer-textarea') as HTMLTextAreaElement;
-		const composerSend = getByTestId(container, 'composer-send');
-		const uploadFile = new File(
-			[
-				Uint8Array.from([
-					0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-					0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c,
-					0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00,
-					0x03, 0x03, 0x01, 0xff, 0xa5, 0x9f, 0x81, 0x89, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
-					0xae, 0x42, 0x60, 0x82,
-				]),
-			],
-			'betterchat-e2e-upload.png',
-			{ type: 'image/png' },
-		);
+			const composerImageInput = getByTestId(container, 'composer-image-input') as HTMLInputElement;
+			const composerTextarea = getByTestId(container, 'composer-textarea') as HTMLTextAreaElement;
+			const composerSend = getByTestId(container, 'composer-send');
+			const uploadFile = new File(
+				[
+					Uint8Array.from([
+						0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+						0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x04, 0x00, 0x00, 0x00, 0xb5, 0x1c, 0x0c,
+						0x02, 0x00, 0x00, 0x00, 0x0b, 0x49, 0x44, 0x41, 0x54, 0x78, 0xda, 0x63, 0xfc, 0xff, 0x1f, 0x00,
+						0x03, 0x03, 0x01, 0xff, 0xa5, 0x9f, 0x81, 0x89, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e, 0x44,
+						0xae, 0x42, 0x60, 0x82,
+					]),
+				],
+				'betterchat-e2e-upload.png',
+				{ type: 'image/png' },
+			);
 
-		await act(async () => {
-			fireEvent.change(composerImageInput, {
-				target: {
-					files: [uploadFile],
-				},
+			await act(async () => {
+				fireEvent.change(composerImageInput, {
+					target: {
+						files: [uploadFile],
+					},
+				});
 			});
-		});
-		await act(async () => {
-			fireEvent.change(composerTextarea, {
-				target: {
-					value: 'Retry image upload',
-				},
+			await waitFor(() => expect(getByTestId(container, 'composer-image-preview')).toBeTruthy());
+			await act(async () => {
+				fireEvent.change(composerTextarea, {
+					target: {
+						value: 'Retry image upload',
+					},
+				});
 			});
-		});
-		await act(async () => {
-			fireEvent.click(composerSend);
-		});
+			await waitFor(() => expect(composerSend.getAttribute('data-ready')).toBe('true'));
+			await act(async () => {
+				fireEvent.click(composerSend);
+			});
 
-		const failedMessage = () => container.querySelector<HTMLElement>('article[data-delivery-state="failed"]');
-		await waitFor(() => expect(failedMessage()).toBeTruthy());
-		const failedMessageId = failedMessage()?.getAttribute('data-message-id');
-		expect(failedMessageId).toBeTruthy();
-		if (!failedMessageId) {
-			throw new Error('expected failed optimistic image message id');
+			const failedMessage = () => container.querySelector<HTMLElement>('article[data-delivery-state="failed"]');
+			await waitFor(() => expect(failedMessage()).toBeTruthy());
+			const failedMessageId = failedMessage()?.getAttribute('data-message-id');
+			expect(failedMessageId).toBeTruthy();
+			if (!failedMessageId) {
+				throw new Error('expected failed optimistic image message id');
+			}
+
+			await act(async () => {
+				fireEvent.click(getByTestId(container, `timeline-message-retry-${failedMessageId}`));
+			});
+
+			await waitFor(() =>
+				expect(getByTestId(container, 'timeline-message-content-message-canonical-image').getAttribute('data-collapsed')).toBe('false'),
+			);
+		} finally {
+			Object.defineProperty(globalThis, 'Image', {
+				configurable: true,
+				value: originalImage,
+			});
+			Object.defineProperty(window, 'Image', {
+				configurable: true,
+				value: originalImage,
+			});
 		}
-
-		await act(async () => {
-			fireEvent.click(getByTestId(container, `timeline-message-retry-${failedMessageId}`));
-		});
-
-		await waitFor(() =>
-			expect(getByTestId(container, 'timeline-message-content-message-canonical-image').getAttribute('data-collapsed')).toBe('false'),
-		);
 	});
 
 	it('renders the attention dock outside the scrollable sidebar body and excludes the active room', async () => {
