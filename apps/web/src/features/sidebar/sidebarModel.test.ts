@@ -138,4 +138,26 @@ describe('getDefaultRoomId', () => {
 
 		expect(getDefaultRoomId(entries)).toBe('open-next');
 	});
+
+	it('keeps the default room anchored to attention-first room ordering instead of notification-delivery priority', () => {
+		const entries: RoomSummary[] = [
+			baseEntry({
+				id: 'dm-urgentish',
+				kind: 'dm',
+				title: 'Mia 张',
+				favorite: true,
+				attention: { level: 'unread', badgeCount: 1 },
+				lastActivityAt: '2026-03-25T09:18:00.000Z',
+			}),
+			baseEntry({
+				id: 'ops-handoff',
+				title: '运营协调',
+				favorite: true,
+				attention: { level: 'mention', badgeCount: 4 },
+				lastActivityAt: '2026-03-25T09:26:00.000Z',
+			}),
+		];
+
+		expect(getDefaultRoomId(entries)).toBe('ops-handoff');
+	});
 });

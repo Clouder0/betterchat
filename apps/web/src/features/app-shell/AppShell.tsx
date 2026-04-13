@@ -1198,7 +1198,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			return;
 		}
 
-		const defaultRoomId = getDefaultRoomId(sidebarEntries, roomAlertPreferences, roomNotificationDefaults);
+		const defaultRoomId = getDefaultRoomId(sidebarEntries);
 		if (!defaultRoomId) {
 			return;
 		}
@@ -1208,7 +1208,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 			params: { roomId: defaultRoomId },
 			replace: true,
 		});
-	}, [navigate, roomAlertPreferences, roomId, roomNotificationDefaults, sidebarEntries]);
+	}, [navigate, roomId, sidebarEntries]);
 
 	useEffect(() => {
 		setFocusedSidebarRoomId((currentRoomId) => {

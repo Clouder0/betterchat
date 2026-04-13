@@ -59,7 +59,7 @@ test.describe('auth and shell', () => {
 		await expect(page.getByTestId('sidebar-section-dms')).toBeVisible();
 		await expect(page.getByTestId('sidebar-room-ops-handoff')).toHaveAttribute('data-active', 'true');
 		await expect(page.getByTestId('sidebar-room-badge-ops-handoff')).toHaveAttribute('data-mentioned', 'true');
-		await expect(page.getByTestId('sidebar-room-badge-ops-handoff')).toHaveAttribute('data-priority', 'subscribed');
+		await expect(page.getByTestId('sidebar-room-badge-ops-handoff')).toHaveAttribute('data-priority', 'personal');
 		await expect(page.getByTestId('sidebar-room-presence-dm-mia')).toHaveAttribute('data-status', 'away');
 		await expect(page.getByTestId('sidebar-room-presence-dm-zhoulan')).toHaveAttribute('data-status', 'online');
 		await expect(page.getByTestId('sidebar-room-presence-dm-guning')).toHaveAttribute('data-status', 'busy');
@@ -297,7 +297,7 @@ test.describe('auth and shell', () => {
 		await openRoom(page, 'ops-handoff');
 	});
 
-	test('persists local normal-priority markers and reorders rooms by subscription priority, mention, and latest activity', async ({
+	test('persists local mute overrides and reorders rooms by notification priority, mention, and latest activity', async ({
 		page,
 	}) => {
 		await loginAsFixtureUser(page);
@@ -308,7 +308,7 @@ test.describe('auth and shell', () => {
 				nodes.map((node) => node.getAttribute('data-testid') ?? ''),
 			);
 
-		await expect(page.getByTestId('sidebar-room-badge-platform-duty')).toHaveAttribute('data-priority', 'subscribed');
+		await expect(page.getByTestId('sidebar-room-badge-platform-duty')).toHaveAttribute('data-priority', 'personal');
 		expect((await roomOrder()).slice(0, 3)).toEqual([
 			'sidebar-room-platform-duty',
 			'sidebar-room-delivery-room',
@@ -318,11 +318,12 @@ test.describe('auth and shell', () => {
 		await openRoom(page, 'platform-duty');
 		await waitForRoomLoadingToFinish(page);
 		const roomAlertToggle = page.getByTestId('room-alert-toggle');
-		await expect(roomAlertToggle).toHaveAttribute('aria-pressed', 'true');
+		await expect(roomAlertToggle).toHaveAttribute('data-active', 'personal');
 		await roomAlertToggle.click();
+		await page.getByTestId('room-alert-menu-mute').click();
 
-		await expect(roomAlertToggle).toHaveAttribute('aria-pressed', 'false');
-		await expect(page.getByTestId('sidebar-room-badge-platform-duty')).toHaveAttribute('data-priority', 'normal');
+		await expect(roomAlertToggle).toHaveAttribute('data-active', 'mute');
+		await expect(page.getByTestId('sidebar-room-badge-platform-duty')).toHaveAttribute('data-priority', 'mute');
 		await expect(page.getByTestId('sidebar-room-badge-platform-duty')).toContainText('2');
 		expect((await roomOrder()).slice(0, 3)).toEqual([
 			'sidebar-room-delivery-room',
@@ -334,8 +335,8 @@ test.describe('auth and shell', () => {
 		await waitForRoomLoadingToFinish(page);
 
 		await expect(page.getByTestId('room-title')).toBeVisible();
-		await expect(page.getByTestId('room-alert-toggle')).toHaveAttribute('aria-pressed', 'false');
-		await expect(page.getByTestId('sidebar-room-badge-platform-duty')).toHaveAttribute('data-priority', 'normal');
+		await expect(page.getByTestId('room-alert-toggle')).toHaveAttribute('data-active', 'mute');
+		await expect(page.getByTestId('sidebar-room-badge-platform-duty')).toHaveAttribute('data-priority', 'mute');
 		expect((await roomOrder()).slice(0, 3)).toEqual([
 			'sidebar-room-delivery-room',
 			'sidebar-room-compat-lab',
@@ -801,6 +802,9 @@ test.describe('auth and shell', () => {
 
 	test('supports keyboard-first sidebar navigation, region shortcuts, and settings access', async ({ page }) => {
 		await loginAsFixtureUser(page);
+		const topSidebarRoom = page.getByTestId('sidebar-body').locator('button[data-testid^="sidebar-room-"]').first();
+		const secondSidebarRoom = page.getByTestId('sidebar-body').locator('button[data-testid^="sidebar-room-"]').nth(1);
+		const thirdSidebarRoom = page.getByTestId('sidebar-body').locator('button[data-testid^="sidebar-room-"]').nth(2);
 
 		await expect(page.getByTestId('sidebar-room-ops-handoff')).toBeFocused();
 		await expect(page.getByTestId('sidebar-room-ops-handoff')).toHaveAttribute('data-keyboard-visible', 'false');
@@ -841,23 +845,23 @@ test.describe('auth and shell', () => {
 			.toBe('none');
 
 		await page.keyboard.press('Home');
-		await expect(page.getByTestId('sidebar-room-ops-handoff')).toBeFocused();
+		await expect(topSidebarRoom).toBeFocused();
 		await page.keyboard.press('ArrowUp');
 		await expect(page.getByTestId('sidebar-search')).toBeFocused();
 		await page.keyboard.press('ArrowUp');
 		await expect(page.getByTestId('sidebar-search')).toBeFocused();
 		await page.keyboard.press('ArrowDown');
-		await expect(page.getByTestId('sidebar-room-ops-handoff')).toBeFocused();
+		await expect(topSidebarRoom).toBeFocused();
 
 		await page.getByTestId('sidebar-room-dm-mia').hover();
 		await expect(page.getByTestId('sidebar-room-ops-handoff')).toHaveAttribute('data-keyboard-visible', 'false');
 
 		await page.keyboard.press(`Alt+1`);
-		await expect(page.getByTestId('sidebar-room-ops-handoff')).toHaveAttribute('data-keyboard-visible', 'true');
+		await expect(topSidebarRoom).toHaveAttribute('data-keyboard-visible', 'true');
 
 		await page.keyboard.press('ArrowRight');
 		await expect(page.locator('article[data-message-id][data-keyboard-focused="true"]')).toBeFocused();
-		await expect(page.getByTestId('sidebar-room-ops-handoff')).toHaveAttribute('data-keyboard-visible', 'false');
+		await expect(topSidebarRoom).toHaveAttribute('data-keyboard-visible', 'false');
 
 		await page.keyboard.press('Home');
 		await expect(page.locator('article[data-message-id]').first()).toBeFocused();
@@ -867,7 +871,7 @@ test.describe('auth and shell', () => {
 		await page.keyboard.press('ArrowLeft');
 		await expect(page.getByTestId('sidebar-search')).toBeFocused();
 		await page.keyboard.press('ArrowDown');
-		await expect(page.getByTestId('sidebar-room-ops-handoff')).toBeFocused();
+		await expect(topSidebarRoom).toBeFocused();
 		await page.keyboard.press('ArrowRight');
 		await expect(page.locator('article[data-message-id][data-keyboard-focused="true"]')).toBeFocused();
 		await page.keyboard.press('Home');
@@ -905,7 +909,7 @@ test.describe('auth and shell', () => {
 		await expect(page.locator('article[data-message-id][data-keyboard-focused="true"]')).toBeFocused();
 
 		await page.keyboard.press('ArrowLeft');
-		await expect(page.getByTestId('sidebar-room-ops-handoff')).toBeFocused();
+		await expect(topSidebarRoom).toBeFocused();
 
 		await page.keyboard.press('ArrowRight');
 		await expect(page.locator('article[data-message-id][data-keyboard-focused="true"]')).toBeFocused();
@@ -914,17 +918,23 @@ test.describe('auth and shell', () => {
 		await expect(page.getByTestId('room-favorite-toggle')).toBeFocused();
 
 		await page.keyboard.press(`Alt+1`);
-		await expect(page.getByTestId('sidebar-room-ops-handoff')).toBeFocused();
+		await expect(topSidebarRoom).toBeFocused();
 
 		await page.keyboard.press('ArrowDown');
-		await expect(page.getByTestId('sidebar-room-dm-mia')).toBeFocused();
+		await expect(secondSidebarRoom).toBeFocused();
 
 		await page.keyboard.press('ArrowDown');
-		await expect(page.getByTestId('sidebar-room-platform-duty')).toBeFocused();
+		await expect(thirdSidebarRoom).toBeFocused();
+
+		const thirdSidebarRoomTestId = await thirdSidebarRoom.getAttribute('data-testid');
+		const thirdSidebarRoomId = thirdSidebarRoomTestId?.replace('sidebar-room-', '');
+		if (!thirdSidebarRoomId) {
+			throw new Error('third sidebar room id was unavailable');
+		}
 
 		await page.keyboard.press('Enter');
 		await waitForRoomLoadingToFinish(page);
-		await expect(page).toHaveURL(/\/app\/rooms\/platform-duty$/);
+		await expect(page).toHaveURL(new RegExp(`/app/rooms/${thirdSidebarRoomId}$`));
 
 		await page.keyboard.press(`${commandOrControl}+K`);
 		const search = page.getByTestId('sidebar-search');

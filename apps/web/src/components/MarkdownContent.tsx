@@ -450,6 +450,18 @@ const CodeBlock: NonNullable<Components['code']> = ({
 };
 (CodeBlock as MentionDecorationBoundaryType)[MENTION_DECORATION_BOUNDARY] = true;
 
+const resolveMarkdownLinkRel = (rel: string | undefined) => {
+	const relationTokens = new Set(
+		(rel ?? '')
+			.split(/\s+/u)
+			.map((token) => token.trim())
+			.filter(Boolean),
+	);
+	relationTokens.add('noopener');
+	relationTokens.add('noreferrer');
+	return [...relationTokens].join(' ');
+};
+
 const createMarkdownComponents = ({
 	currentUser,
 	imageInteraction,
@@ -464,8 +476,14 @@ const createMarkdownComponents = ({
 	};
 	mentionInteraction?: MarkdownMentionInteraction;
 }): Components => ({
-	a: ({ children, ...props }) => (
-		<a className={styles.markdownLink} {...props}>
+	a: ({ children, className, href, rel, ...props }) => (
+		<a
+			{...props}
+			className={[styles.markdownLink, className].filter(Boolean).join(' ')}
+			href={href}
+			rel={href ? resolveMarkdownLinkRel(rel) : rel}
+			target={href ? '_blank' : undefined}
+		>
 			{decorateInlineMentions({ currentUser, mentionInteraction, node: children })}
 		</a>
 	),

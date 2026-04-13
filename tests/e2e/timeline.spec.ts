@@ -22,6 +22,42 @@ test.skip(isApiMode, 'fixture-only suite');
 
 const readElementHeight = async (locator: Locator) => locator.evaluate((node) => node.getBoundingClientRect().height);
 
+const readActiveTestId = (page: Page) =>
+	page.evaluate(() => {
+		const activeElement = document.activeElement;
+		return activeElement instanceof HTMLElement ? activeElement.dataset.testid ?? null : null;
+	});
+
+const readAdjacentSidebarRoomTestId = (page: Page, direction: 'next' | 'previous') =>
+	page.getByTestId('sidebar-body').evaluate((node, requestedDirection) => {
+		const roomButtons = Array.from(node.querySelectorAll<HTMLElement>('button[data-testid^="sidebar-room-"]')).filter(
+			(button) => button.getClientRects().length > 0 && window.getComputedStyle(button).visibility !== 'hidden',
+		);
+		const activeElement = document.activeElement;
+		if (!(activeElement instanceof HTMLElement)) {
+			return null;
+		}
+
+		const activeIndex = roomButtons.indexOf(activeElement);
+		if (activeIndex < 0) {
+			return null;
+		}
+
+		const targetIndex = requestedDirection === 'next' ? activeIndex + 1 : activeIndex - 1;
+		return roomButtons[targetIndex]?.dataset.testid ?? null;
+	}, direction);
+
+const expandTimelineMessageIfCollapsed = async (message: Locator) => {
+	const toggle = message.locator('[data-testid^="timeline-message-toggle-"]').first();
+	if ((await toggle.count()) === 0) {
+		return;
+	}
+
+	if ((await toggle.textContent())?.includes('展开')) {
+		await toggle.click();
+	}
+};
+
 const sampleTimelineScrollTopDrift = async (timeline: Locator, durationMs = 420) =>
 	timeline.evaluate(async (node, requestedDurationMs) => {
 		const samples = [node.scrollTop];
@@ -639,6 +675,9 @@ test.describe('timeline behavior', () => {
 
 		const link = page.getByRole('link', { name: '交付手册' });
 		await expect(link).toBeVisible();
+		await expect(link).toHaveAttribute('target', '_blank');
+		await expect(link).toHaveAttribute('rel', /noopener/);
+		await expect(link).toHaveAttribute('rel', /noreferrer/);
 
 		const readLinkStyles = async () =>
 			link.evaluate((node) => {
@@ -656,6 +695,32 @@ test.describe('timeline behavior', () => {
 
 		expect(afterHover.color).not.toBe(beforeHover.color);
 		expect(afterHover.textDecorationColor).not.toBe(beforeHover.textDecorationColor);
+	});
+
+	test('opens message markdown links in a new tab without leaving the current room', async ({ page }) => {
+		await loginAsFixtureUser(page);
+		await scrollTimelineToBottom(page);
+
+		const linkLabel = `链接探针 ${Date.now()}`;
+		const linkPath = `/content#timeline-message-link-${Date.now()}`;
+		const currentUrl = page.url();
+
+		await page.getByTestId('composer-textarea').fill(`请查看 [${linkLabel}](${linkPath})，然后继续留在当前会话。`);
+		await page.getByTestId('composer-send').click();
+
+		const deliveredMessage = page.locator('article[data-message-id][data-delivery-state="sent"]').filter({ hasText: linkLabel }).last();
+		await expect(deliveredMessage).toBeVisible();
+
+		const link = deliveredMessage.getByRole('link', { name: linkLabel });
+		await expect(link).toHaveAttribute('target', '_blank');
+		await expect(link).toHaveAttribute('rel', /noopener/);
+		await expect(link).toHaveAttribute('rel', /noreferrer/);
+
+		const [popup] = await Promise.all([page.waitForEvent('popup'), link.click()]);
+		await popup.waitForLoadState('domcontentloaded');
+		await expect.poll(() => popup.url()).toContain(linkPath);
+		await expect(page).toHaveURL(currentUrl);
+		await popup.close();
 	});
 
 	test('keeps grouped code-only messages visually separated from the reply and forward action lane', async ({ page }) => {
@@ -1378,10 +1443,7 @@ test.describe('timeline behavior', () => {
 		const deliveredMessage = page.locator('article[data-message-id][data-delivery-state="sent"]').filter({ hasText: caption }).last();
 		await expect(deliveredMessage).toBeVisible();
 
-		const deliveredToggle = deliveredMessage.locator('[data-testid^="timeline-message-toggle-"]');
-		if (await deliveredToggle.count() > 0) {
-			await deliveredToggle.first().click();
-		}
+		await expandTimelineMessageIfCollapsed(deliveredMessage);
 
 		const deliveredHeight = await readElementHeight(deliveredMessage);
 		const deliveredImage = deliveredMessage.getByRole('button', { name: `查看图片：${mediumBmpFixture.fileName}` });
@@ -1470,10 +1532,7 @@ test.describe('timeline behavior', () => {
 		await expect(deliveredMessage).toContainText(caption);
 		await expect(deliveredMessage).toHaveAttribute('data-delivery-state', 'sent');
 
-		const retryToggle = deliveredMessage.locator('[data-testid^="timeline-message-toggle-"]');
-		if (await retryToggle.count() > 0) {
-			await retryToggle.first().click();
-		}
+		await expandTimelineMessageIfCollapsed(deliveredMessage);
 
 		await expect(deliveredMessage.getByRole('button', { name: `查看图片：${tinyPngFixture.fileName}` })).toBeVisible();
 		await scrollTimelineToBottom(page);
@@ -2313,13 +2372,17 @@ test.describe('timeline behavior', () => {
 
 		await page.keyboard.press('ArrowLeft');
 		await expect(page.getByTestId('sidebar-room-ops-handoff')).toBeFocused();
+		const nextSidebarRoomTestId = await readAdjacentSidebarRoomTestId(page, 'next');
+		if (!nextSidebarRoomTestId) {
+			throw new Error('next sidebar room id was unavailable');
+		}
 
 		await page.keyboard.press('ArrowDown');
-		await expect(page.getByTestId('sidebar-room-dm-mia')).toBeFocused();
+		await expect.poll(() => readActiveTestId(page)).toBe(nextSidebarRoomTestId);
 		await expect(page.locator('article[data-message-id][data-keyboard-visible="true"]')).toHaveCount(0);
 
 		await page.keyboard.press('ArrowUp');
-		await expect(page.getByTestId('sidebar-room-ops-handoff')).toBeFocused();
+		await expect.poll(() => readActiveTestId(page)).toBe('sidebar-room-ops-handoff');
 	});
 
 	test('keeps rapid sidebar arrow traversal local immediately after moving left from the timeline', async ({ page }) => {
@@ -2331,12 +2394,16 @@ test.describe('timeline behavior', () => {
 		await expect(page.getByTestId('timeline-message-ops-006')).toBeFocused();
 
 		await page.keyboard.press('ArrowLeft');
+		const nextSidebarRoomTestId = await readAdjacentSidebarRoomTestId(page, 'next');
+		if (!nextSidebarRoomTestId) {
+			throw new Error('next sidebar room id was unavailable');
+		}
 		await page.keyboard.press('ArrowDown');
-		await expect(page.getByTestId('sidebar-room-dm-mia')).toBeFocused();
+		await expect.poll(() => readActiveTestId(page)).toBe(nextSidebarRoomTestId);
 		await expect(page.locator('article[data-message-id][data-keyboard-visible="true"]')).toHaveCount(0);
 
 		await page.keyboard.press('ArrowUp');
-		await expect(page.getByTestId('sidebar-room-ops-handoff')).toBeFocused();
+		await expect.poll(() => readActiveTestId(page)).toBe('sidebar-room-ops-handoff');
 		await expect(page.locator('article[data-message-id][data-keyboard-visible="true"]')).toHaveCount(0);
 	});
 });

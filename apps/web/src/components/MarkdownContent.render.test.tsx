@@ -405,6 +405,9 @@ describe('MarkdownContent - Structural Rendering', () => {
 			const link = getByTag(container, 'a');
 			expect(link).not.toBe(null);
 			expect(link!.getAttribute('href')).toBe('https://example.com');
+			expect(link!.getAttribute('target')).toBe('_blank');
+			expect(link!.getAttribute('rel')).toContain('noopener');
+			expect(link!.getAttribute('rel')).toContain('noreferrer');
 		});
 	});
 

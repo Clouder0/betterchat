@@ -1104,6 +1104,9 @@ const liveHistoryProbe = {
 
 		const link = page.getByRole('link', { name: linkLabel });
 		await expect(link).toBeVisible();
+		await expect(link).toHaveAttribute('target', '_blank');
+		await expect(link).toHaveAttribute('rel', /noopener/);
+		await expect(link).toHaveAttribute('rel', /noreferrer/);
 
 		const readLinkStyles = async () =>
 			link.evaluate((node) => {

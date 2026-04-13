@@ -197,11 +197,30 @@ export const buildSidebarGroups = (
 		.filter((group) => group.entries.length > 0);
 };
 
-export const getDefaultRoomId = (
-	entries: RoomSummary[],
-	notificationPreferences: RoomNotificationPreferenceStore = {},
-	notificationDefaults: RoomNotificationDefaults = DEFAULT_ROOM_NOTIFICATION_DEFAULTS,
-) => {
-	const sortedEntries = buildSidebarGroups(entries, '', notificationPreferences, {}, undefined, notificationDefaults).flatMap((group) => group.entries);
+const compareEntriesForDefaultRoom = (left: RoomSummary, right: RoomSummary) => {
+	const attentionDelta = attentionPriority[right.attention.level] - attentionPriority[left.attention.level];
+	if (attentionDelta !== 0) {
+		return attentionDelta;
+	}
+
+	const activityDelta = resolveSidebarActivityTimestamp(right) - resolveSidebarActivityTimestamp(left);
+	if (activityDelta !== 0) {
+		return activityDelta;
+	}
+
+	return collator.compare(left.title, right.title);
+};
+
+export const getDefaultRoomId = (entries: RoomSummary[]) => {
+	const groupedEntries = new Map<SidebarGroupKey, RoomSummary[]>();
+
+	for (const entry of entries) {
+		const groupKey = toGroupKey(entry);
+		const bucket = groupedEntries.get(groupKey) ?? [];
+		bucket.push(entry);
+		groupedEntries.set(groupKey, bucket);
+	}
+
+	const sortedEntries = sidebarGroupDefinitions.flatMap(({ key }) => [...(groupedEntries.get(key) ?? [])].sort(compareEntriesForDefaultRoom));
 	return sortedEntries.find((entry) => entry.visibility === 'visible')?.id ?? sortedEntries[0]?.id;
 };
