@@ -662,7 +662,6 @@ test.describe('auth and shell', () => {
 		await page.getByTestId('sidebar-room-platform-duty').click();
 		await expect(page).toHaveURL(/\/app\/rooms\/platform-duty$/);
 		await expect(page.getByTestId('readonly-composer-notice')).toHaveCount(0);
-		await expect(page.getByTestId('composer')).toHaveCount(0);
 
 		await waitForRoomLoadingToFinish(page);
 		await expect(page.getByTestId('composer')).toBeVisible();

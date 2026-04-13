@@ -76,7 +76,7 @@ import type {
 } from '@/lib/chatModels';
 import { spaceText } from '@/lib/text';
 
-import { reconcileSubmissionTimeline, timelineMessagesShareIdentity } from './submissionReconciliation';
+import { mergeTimelineMessageWithLocalSubmission, reconcileSubmissionTimeline, timelineMessagesShareIdentity } from './submissionReconciliation';
 import {
 	applyFavoriteOverrides,
 	loadFavoriteOverrides,
@@ -3129,6 +3129,10 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 
 	const appendServerTimelineMessage = useCallback(
 		(targetRoomId: string, message: TimelineMessage) => {
+			const localMessage =
+				roomLocalMessagesRef.current[targetRoomId]?.find((entry) => timelineMessagesShareIdentity(entry.message, message))?.message ?? null;
+			const incomingMessage = localMessage ? mergeTimelineMessageWithLocalSubmission(message, localMessage) : message;
+
 			queryClient.setQueryData<RoomTimelineSnapshot | undefined>(
 				betterChatQueryKeys.roomTimeline(targetRoomId),
 				(currentTimeline) => {
@@ -3144,16 +3148,16 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 						if (!existingMessage) {
 							return currentTimeline;
 						}
-						const submissionId = message.submissionId ?? existingMessage.submissionId;
+						const submissionId = incomingMessage.submissionId ?? existingMessage.submissionId;
 
 						const mergedMessage: TimelineMessage = {
 							...existingMessage,
-							...message,
+							...incomingMessage,
 							...(submissionId ? { submissionId } : {}),
-							replyTo: message.replyTo ?? existingMessage.replyTo,
-							thread: message.thread ?? existingMessage.thread,
-							attachments: message.attachments ?? existingMessage.attachments,
-							reactions: message.reactions ?? existingMessage.reactions,
+							replyTo: incomingMessage.replyTo ?? existingMessage.replyTo,
+							thread: incomingMessage.thread ?? existingMessage.thread,
+							attachments: incomingMessage.attachments ?? existingMessage.attachments,
+							reactions: incomingMessage.reactions ?? existingMessage.reactions,
 						};
 						const nextMessages = [...currentTimeline.messages];
 						nextMessages[existingMessageIndex] = mergedMessage;
@@ -3165,7 +3169,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 
 					return {
 						...currentTimeline,
-						messages: [...currentTimeline.messages, message],
+						messages: [...currentTimeline.messages, incomingMessage],
 					};
 				},
 			);
@@ -3256,6 +3260,7 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 						const uploadImageFile = (uploadFile: File) =>
 							betterChatApi.uploadImage(targetRoomId, {
 								file: uploadFile,
+								imageDimensions: localMessage.payload.imageDimensions,
 								submissionId: localMessage.message.submissionId,
 								text: localMessage.payload.text || undefined,
 							});

@@ -108,16 +108,44 @@ describe('fixtureBetterChatService', () => {
 			file: new File([new Uint8Array([0x89, 0x50, 0x4e, 0x47])], 'fixture-upload.png', {
 				type: 'image/png',
 			}),
+			imageDimensions: {
+				width: 60,
+				height: 40,
+			},
 			submissionId: 'submission-fixture-image-1',
 			text: 'fixture image upload',
 		});
 
 		expect(response.message.id).toBe('submission-fixture-image-1');
 		expect(response.message.submissionId).toBe('submission-fixture-image-1');
+		expect(response.message.attachments).toEqual([
+			expect.objectContaining({
+				preview: expect.objectContaining({
+					width: 60,
+					height: 40,
+				}),
+				source: expect.objectContaining({
+					width: 60,
+					height: 40,
+				}),
+			}),
+		]);
 
 		const timeline = await fixtureBetterChatService.conversationTimeline('ops-handoff');
 		expect(timeline.messages.at(-1)?.id).toBe('submission-fixture-image-1');
 		expect(timeline.messages.at(-1)?.submissionId).toBe('submission-fixture-image-1');
+		expect(timeline.messages.at(-1)?.attachments).toEqual([
+			expect.objectContaining({
+				preview: expect.objectContaining({
+					width: 60,
+					height: 40,
+				}),
+				source: expect.objectContaining({
+					width: 60,
+					height: 40,
+				}),
+			}),
+		]);
 	});
 
 	it('applies membership commands against canonical inbox state', async () => {

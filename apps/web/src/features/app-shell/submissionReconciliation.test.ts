@@ -155,4 +155,77 @@ describe('reconcileSubmissionTimeline', () => {
 		expect(result.failedMessageActions).toEqual({});
 		expect([...result.localOutgoingMessageIds]).toEqual([]);
 	});
+
+	it('preserves optimistic image dimensions when the canonical upload omits them', () => {
+		const result = reconcileSubmissionTimeline({
+			canonicalMessages: [
+				createMessage('server-image-1', {
+					attachments: [
+						{
+							kind: 'image',
+							id: 'attachment-server-1',
+							title: 'upload.png',
+							preview: {
+								url: '/api/media/file-upload/thumb-1/upload.png',
+							},
+							source: {
+								url: '/api/media/file-upload/file-1/upload.png',
+							},
+						},
+					],
+					body: {
+						rawMarkdown: '附上一张截图',
+					},
+					submissionId: 'submission-image-1',
+				}),
+			],
+			localMessages: [
+				{
+					message: createMessage('submission-image-1', {
+						attachments: [
+							{
+								kind: 'image',
+								id: 'attachment-local-1',
+								title: 'upload.png',
+								preview: {
+									url: 'blob:http://127.0.0.1/upload-preview',
+									width: 60,
+									height: 40,
+								},
+								source: {
+									url: 'blob:http://127.0.0.1/upload-preview',
+									width: 60,
+									height: 40,
+								},
+							},
+						],
+						body: {
+							rawMarkdown: '附上一张截图',
+						},
+						submissionId: 'submission-image-1',
+					}),
+					status: 'sending',
+				},
+			],
+		});
+
+		expect(result.messages).toHaveLength(1);
+		expect(result.messages[0]?.attachments).toEqual([
+			{
+				kind: 'image',
+				id: 'attachment-server-1',
+				title: 'upload.png',
+				preview: {
+					url: '/api/media/file-upload/thumb-1/upload.png',
+					width: 60,
+					height: 40,
+				},
+				source: {
+					url: '/api/media/file-upload/file-1/upload.png',
+					width: 60,
+					height: 40,
+				},
+			},
+		]);
+	});
 });

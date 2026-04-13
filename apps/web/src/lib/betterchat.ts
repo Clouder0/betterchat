@@ -368,7 +368,7 @@ export const betterChatApi = {
 			  ),
 	uploadImage: async (
 		roomId: string,
-		request: { file: File; submissionId?: string; text?: string },
+		request: { file: File; imageDimensions?: { height: number; width: number }; submissionId?: string; text?: string },
 	): Promise<SendMessageResponse> => {
 		if (useFixtureMode) {
 			return runFixture(async () => toSendMessageResponse(await fixtureBetterChatService.uploadConversationMedia(roomId, request)));
