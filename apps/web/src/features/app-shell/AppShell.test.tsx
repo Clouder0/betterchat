@@ -789,6 +789,87 @@ describe('AppShell component contracts', () => {
 		expect(getByTestId(container, 'sidebar-attention-dock-item-dm-alice')).toBeTruthy();
 	});
 
+	it('projects interruptive sidebar attention into the browser title and favicon badge', async () => {
+		dom = installTestDom();
+		document.title = 'BetterChat 设计评审';
+		const favicon = document.createElement('link');
+		favicon.rel = 'icon';
+		favicon.type = 'image/svg+xml';
+		favicon.setAttribute('href', '/favicon.svg');
+		document.head.appendChild(favicon);
+		roomListState = {
+			rooms: [
+				{
+					attention: {
+						level: 'none',
+					},
+					favorite: false,
+					id: 'room-ops',
+					kind: 'channel',
+					subtitle: 'Operations room',
+					title: 'Ops room',
+					visibility: 'visible',
+				},
+				{
+					attention: {
+						badgeCount: 3,
+						level: 'unread',
+					},
+					favorite: false,
+					id: 'dm-alice',
+					kind: 'dm',
+					subtitle: '@alice',
+					title: 'Alice Example',
+					visibility: 'visible',
+				},
+				{
+					attention: {
+						badgeCount: 2,
+						level: 'mention',
+					},
+					favorite: false,
+					id: 'room-mentions',
+					kind: 'channel',
+					subtitle: 'Mentions room',
+					title: 'Mentions room',
+					visibility: 'visible',
+				},
+				{
+					attention: {
+						badgeCount: 4,
+						level: 'unread',
+					},
+					favorite: false,
+					id: 'room-general',
+					kind: 'channel',
+					subtitle: 'General room',
+					title: 'General room',
+					visibility: 'visible',
+				},
+			],
+			version: 'room-list-v2',
+		};
+
+		const { container, unmount } = renderWithAppProviders(<AppShell roomId='room-ops' />);
+
+		await waitFor(() => expect(getByTestId(container, 'sidebar-room-room-ops')).toBeTruthy());
+		await waitFor(() => expect(document.title).toBe('(5) BetterChat 设计评审'));
+
+		const activeFavicon = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
+		expect(activeFavicon?.getAttribute('type')).toBe('image/svg+xml');
+		const href = activeFavicon?.getAttribute('href') ?? '';
+		expect(href.startsWith('data:image/svg+xml;charset=utf-8,')).toBe(true);
+		const svg = decodeURIComponent(href.slice('data:image/svg+xml;charset=utf-8,'.length));
+		expect(svg).toContain('data-browser-chrome-badge="mention"');
+		expect(svg).toContain('>5<');
+
+		unmount();
+
+		expect(document.title).toBe('BetterChat 设计评审');
+		expect(activeFavicon?.getAttribute('href')).toBe('/favicon.svg');
+		expect(activeFavicon?.getAttribute('type')).toBe('image/svg+xml');
+	});
+
 	it('opens a room when the attention dock item is clicked', async () => {
 		dom = installTestDom();
 		roomListState = {

@@ -48,6 +48,11 @@ import {
 	type RoomNotificationPreference as RoomAlertPreference,
 } from '@/features/notifications/notificationPreferences';
 import {
+	createBrowserChromeFaviconHref,
+	formatBrowserChromeTitle,
+	resolveBrowserChromeAttention,
+} from '@/features/notifications/browserChromeAttention';
+import {
 	isBrowserNotificationDeliveryEnabled,
 } from '@/features/notifications/notificationPolicy';
 import {
@@ -609,6 +614,13 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 	const roomNotificationInflightRef = useRef(new Set<string>());
 	const queuedFavoriteMutationRef = useRef<{ favorite: boolean; targetRoomId: string } | null>(null);
 	const browserNotificationEffectsMountedRef = useRef(true);
+	const browserChromeOriginalRef = useRef<{
+		faviconHref: string | null;
+		faviconType: string | null;
+		faviconWasCreated: boolean;
+		title: string;
+	} | null>(null);
+	const browserChromeFaviconLinkRef = useRef<HTMLLinkElement | null>(null);
 	const previousSidebarOrderEntriesRef = useRef<RoomSummary[]>([]);
 	const previousSidebarOrderingStateRef = useRef<SidebarOrderingState>({});
 	const forwardToastTimerRef = useRef<number | null>(null);
@@ -1106,6 +1118,91 @@ export const AppShell = ({ roomId }: { roomId?: string }) => {
 		() => (favoriteOverridesEnabled ? applyFavoriteOverrides(rawSidebarEntries, favoriteOverrides) : [...rawSidebarEntries]),
 		[favoriteOverrides, favoriteOverridesEnabled, rawSidebarEntries],
 	);
+	const browserChromeAttention = useMemo(
+		() =>
+			resolveBrowserChromeAttention(sidebarEntries, {
+				defaults: roomNotificationDefaults,
+				preferences: roomAlertPreferences,
+			}),
+		[roomAlertPreferences, roomNotificationDefaults, sidebarEntries],
+	);
+	useLayoutEffect(() => {
+		if (typeof document === 'undefined') {
+			return;
+		}
+
+		const existingFaviconLink = document.querySelector<HTMLLinkElement>('link[rel~="icon"]');
+		const faviconLink = existingFaviconLink ?? document.createElement('link');
+		const faviconWasCreated = !existingFaviconLink;
+		if (faviconWasCreated) {
+			faviconLink.rel = 'icon';
+			faviconLink.type = 'image/svg+xml';
+			document.head.appendChild(faviconLink);
+		}
+
+		browserChromeOriginalRef.current = {
+			faviconHref: faviconLink.getAttribute('href'),
+			faviconType: faviconLink.getAttribute('type'),
+			faviconWasCreated,
+			title: document.title,
+		};
+		browserChromeFaviconLinkRef.current = faviconLink;
+
+		return () => {
+			const original = browserChromeOriginalRef.current;
+			const activeFaviconLink = browserChromeFaviconLinkRef.current;
+			if (!original || !activeFaviconLink) {
+				return;
+			}
+
+			document.title = original.title;
+			if (original.faviconWasCreated) {
+				activeFaviconLink.remove();
+				return;
+			}
+
+			if (original.faviconHref === null) {
+				activeFaviconLink.removeAttribute('href');
+			} else {
+				activeFaviconLink.setAttribute('href', original.faviconHref);
+			}
+			if (original.faviconType === null) {
+				activeFaviconLink.removeAttribute('type');
+			} else {
+				activeFaviconLink.setAttribute('type', original.faviconType);
+			}
+		};
+	}, []);
+	useLayoutEffect(() => {
+		if (typeof document === 'undefined') {
+			return;
+		}
+
+		const original = browserChromeOriginalRef.current;
+		const faviconLink = browserChromeFaviconLinkRef.current;
+		if (!original || !faviconLink) {
+			return;
+		}
+
+		document.title = formatBrowserChromeTitle(original.title, browserChromeAttention);
+		const faviconHref = createBrowserChromeFaviconHref(browserChromeAttention);
+		if (faviconHref) {
+			faviconLink.setAttribute('href', faviconHref);
+			faviconLink.setAttribute('type', 'image/svg+xml');
+			return;
+		}
+
+		if (original.faviconHref === null) {
+			faviconLink.removeAttribute('href');
+		} else {
+			faviconLink.setAttribute('href', original.faviconHref);
+		}
+		if (original.faviconType === null) {
+			faviconLink.removeAttribute('type');
+		} else {
+			faviconLink.setAttribute('type', original.faviconType);
+		}
+	}, [browserChromeAttention]);
 	const sidebarOrderingState = useMemo(
 		() =>
 			deriveSidebarOrderingState({
